@@ -61,7 +61,7 @@
 
 ## 6. Desglose en tareas atómicas (hitos)
 - [x] **H1 — OAuth:** consent flow + guardar/refrescar tokens. Verify: autenticar una vez, segunda corrida no re-pide login.
-- [ ] **H2 — Lectura:** consultar eventos por rango. Verify: "¿qué tengo mañana?" devuelve eventos reales del calendario.
+- [x] **H2 — Lectura:** consultar eventos por rango. Verify: "¿qué tengo mañana?" devuelve eventos reales del calendario.
 - [ ] **H3 — Interpretación NL:** LLM extrae intención + parámetros vía tool-use. Verify: evals de extracción (fecha/hora/título correctos).
 - [ ] **H4 — Escritura + HITL:** crear/mover/borrar con confirmación. Verify: propone, espera OK, ejecuta solo tras confirmación.
 - [ ] **H5 — Errores:** backoff en 429, mensajes claros en permisos/no-existe/ambigüedad. Verify: evals de cada caso de error.
