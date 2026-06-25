@@ -132,6 +132,11 @@ def describe_event(event: dict) -> str:
     return f"{title} ({start.get('date', '')})"
 
 
+def describe_new_schedule(nueva_fecha: str | None, nueva_hora: str | None) -> str:
+    parts = [part for part in (nueva_fecha, nueva_hora) if part]
+    return " ".join(parts) if parts else "(sin cambios)"
+
+
 def create_event(service, titulo: str, fecha: str, hora: str, duracion_minutos: int) -> dict:
     tzinfo = datetime.now().astimezone().tzinfo
     start = datetime.combine(date.fromisoformat(fecha), datetime.strptime(hora, "%H:%M").time(), tzinfo)
@@ -175,7 +180,7 @@ def find_event_by_description(
     return items[0] if items else None
 
 
-def move_event(service, event_id: str, nueva_fecha: str, nueva_hora: str) -> dict:
+def move_event(service, event_id: str, nueva_fecha: str | None = None, nueva_hora: str | None = None) -> dict:
     try:
         event = _execute_with_retry(service.events().get(calendarId="primary", eventId=event_id))
     except HttpError as exc:
@@ -189,11 +194,19 @@ def move_event(service, event_id: str, nueva_fecha: str, nueva_hora: str) -> dic
         duration = datetime.fromisoformat(original_end["dateTime"]) - datetime.fromisoformat(
             original_start["dateTime"]
         )
+        original_local_start = _local_time(original_start)
+        default_fecha = original_local_start.date().isoformat()
+        default_hora = original_local_start.strftime("%H:%M")
     else:
         duration = timedelta(hours=1)
+        default_fecha = original_start.get("date", date.today().isoformat())
+        default_hora = "00:00"
+
+    fecha = nueva_fecha or default_fecha
+    hora = nueva_hora or default_hora
 
     tzinfo = datetime.now().astimezone().tzinfo
-    new_start = datetime.combine(date.fromisoformat(nueva_fecha), datetime.strptime(nueva_hora, "%H:%M").time(), tzinfo)
+    new_start = datetime.combine(date.fromisoformat(fecha), datetime.strptime(hora, "%H:%M").time(), tzinfo)
     new_end = new_start + duration
 
     body = {

@@ -94,6 +94,35 @@ def test_extracts_request_clarification_intent_for_ambiguous_event_reference(mon
     assert result == {"intent": "request_clarification", "params": params}
 
 
+def test_history_is_prepended_before_the_current_message(monkeypatch):
+    monkeypatch.setenv("ANTHROPIC_API_KEY", "fake-key")
+    params = {"descripcion_evento": "reunión de las 2", "nueva_fecha": "2026-06-25", "nueva_hora": "16:00"}
+    response = _fake_response("move_event", params)
+    patcher, mock_client = _patched_client(response=response)
+    history = [
+        {"role": "user", "content": "muévelo al jueves"},
+        {"role": "assistant", "content": "¿Qué evento quieres mover?"},
+    ]
+
+    with patcher:
+        extract_intent("mi reunión de las 2", today=date(2026, 6, 24), history=history)
+
+    kwargs = mock_client.messages.create.call_args.kwargs
+    assert kwargs["messages"] == [*history, {"role": "user", "content": "mi reunión de las 2"}]
+
+
+def test_no_history_keeps_single_message_unchanged(monkeypatch):
+    monkeypatch.setenv("ANTHROPIC_API_KEY", "fake-key")
+    response = _fake_response("read_events", {"fecha_inicio": "2026-06-24", "fecha_fin": "2026-06-24"})
+    patcher, mock_client = _patched_client(response=response)
+
+    with patcher:
+        extract_intent("¿qué tengo hoy?", today=date(2026, 6, 24))
+
+    kwargs = mock_client.messages.create.call_args.kwargs
+    assert kwargs["messages"] == [{"role": "user", "content": "¿qué tengo hoy?"}]
+
+
 def test_logs_token_usage(monkeypatch, caplog):
     monkeypatch.setenv("ANTHROPIC_API_KEY", "fake-key")
     response = _fake_response("read_events", {"fecha_inicio": "2026-06-24", "fecha_fin": "2026-06-24"}, 42, 7)

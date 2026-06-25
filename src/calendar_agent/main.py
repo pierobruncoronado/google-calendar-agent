@@ -14,6 +14,7 @@ from calendar_agent.events import (
     custom_range,
     delete_event,
     describe_event,
+    describe_new_schedule,
     find_event_by_description,
     format_events_natural_language,
     list_events,
@@ -72,13 +73,14 @@ def _handle_move_event(service, params: dict, input_fn=input) -> int:
         print(f"No encontré ningún evento que coincida con '{params['descripcion_evento']}'.")
         return 1
 
-    proposal = f"Voy a mover '{describe_event(event)}' a {params['nueva_fecha']} {params['nueva_hora']}."
+    nueva_fecha, nueva_hora = params.get("nueva_fecha"), params.get("nueva_hora")
+    proposal = f"Voy a mover '{describe_event(event)}' a {describe_new_schedule(nueva_fecha, nueva_hora)}."
     if not _confirm(proposal, input_fn):
         print("Acción cancelada. No se modificó el calendario.")
         return 0
 
     try:
-        move_event(service, event["id"], params["nueva_fecha"], params["nueva_hora"])
+        move_event(service, event["id"], nueva_fecha, nueva_hora)
     except CalendarError as exc:
         print(f"Error al mover el evento: {exc}", file=sys.stderr)
         return 1

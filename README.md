@@ -85,6 +85,22 @@ Las acciones de escritura (crear/mover/borrar) siempre proponen la acción exact
 confirmación (`si`/`no`) antes de tocar el calendario. Si la fecha/hora es ambigua o no se
 puede identificar el evento, el agente pide aclaración en vez de adivinar.
 
+## Capa 2: interfaz web
+
+Una alternativa al CLI: una página de chat mínima (FastAPI + HTML/JS vanilla, sin build step)
+con conversación multi-turno — recuerda el turno anterior, así que la confirmación HITL y la
+aclaración de ambigüedad funcionan como una conversación real, no como comandos sueltos.
+
+```powershell
+$env:PYTHONPATH = "src"
+python -m calendar_agent.webapp
+```
+
+Abre `http://127.0.0.1:8000` en el navegador. Falla rápido (antes de levantar el servidor) si
+el OAuth/credenciales no son válidos, igual que el CLI. El estado de la conversación vive en
+memoria del proceso (cookie de sesión) — no hay base de datos en v1, así que se pierde si
+reinicias el servidor.
+
 ## Tests
 
 ```powershell
@@ -106,8 +122,10 @@ commit. Verifica con `git status` antes de cualquier commit si los tocaste manua
 src/calendar_agent/
   auth.py     # OAuth consent flow + refresh de tokens (H1)
   events.py   # lectura/escritura de eventos contra la API de Calendar (H2, H4) + manejo de errores (H5)
-  intent.py   # extracción de intención NL vía forced tool-use de Anthropic (H3, H5)
-  main.py     # entrypoint CLI: despacha lectura, escritura+HITL y aclaración de ambigüedad
+  intent.py        # extracción de intención NL vía forced tool-use de Anthropic (H3, H5)
+  main.py          # entrypoint CLI: despacha lectura, escritura+HITL y aclaración de ambigüedad
+  conversation.py  # lógica de turno multi-turno para la web UI (Capa 2), reutiliza events.py/intent.py
+  webapp.py        # entrypoint FastAPI: una página de chat + sesión en memoria (Capa 2)
 tests/        # tests mockeados, uno por módulo
 docs/         # spec + registro de decisiones
 ```

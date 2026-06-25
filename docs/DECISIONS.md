@@ -119,3 +119,23 @@ Registro de decisiones no fijadas textualmente en el spec, tomadas durante la im
 - Directorio temporal borrado después de la verificación (contenía copias de credenciales reales).
 
 **Fecha:** 2026-06-25 (H6).
+
+## Capa 2 — Frontend web multi-turno: arquitectura y bug retroactivo en `move_event`
+
+**Decisión:** se eligió Web UI (FastAPI + HTML/JS vanilla, sin Jinja2/build step) con conversación multi-turno, por decisión explícita del usuario (no inferida). Arquitectura:
+- `intent.py`: `extract_intent()` ganó un parámetro opcional `history` (lista de turnos previos `{role, content}`), antepuesto a los mensajes antes del texto actual. Sin `history` (caso del CLI), comportamiento idéntico a antes — no rompe H3/H5.
+- `conversation.py` (nuevo): `handle_turn(service, state, message) -> str`, pura, sin HTTP ni CLI. El `state` (`pending_confirmation` / `pending_clarification`) reemplaza el patrón `input()` síncrono del CLI por "propone ahora, ejecuta en la siguiente llamada", porque un request HTTP no puede quedarse bloqueado esperando confirmación.
+- `webapp.py` (nuevo): FastAPI con una sola página (HTML inline, sin template engine), sesión en memoria vía cookie (`dict` global, un solo proceso — coherente con "single user v1", sin DB). Falla rápido en `main()` si el OAuth no es válido, antes de levantar uvicorn.
+- `main.py` (CLI) **no se modificó** — es una capa nueva y separada, según lo planeado.
+
+**Bug real descubierto en verificación en vivo, corregido antes de cerrar:** el tool-schema de `move_event` (H3) requería `nueva_fecha` Y `nueva_hora` siempre. Al probar el flujo multi-turno real con `"muévelo al jueves"` (solo fecha, sin hora) → aclaración → `"prueba capa2"`, el modelo, forzado a rellenar `nueva_hora`, devolvió literalmente `"<UNKNOWN>"`, y la propuesta mostrada al usuario fue "a 2026-07-02 <UNKNOWN>" — viola el EARS "propone la acción exacta" de §5. Mismo patrón que el bug de timezone de H4: un caso real que las llamadas de H3/H4 nunca habían ejercitado (siempre se probó con fecha Y hora explícitas juntas).
+
+**Fix:** `nueva_fecha`/`nueva_hora` pasan a ser opcionales en el schema (`required` solo `descripcion_evento`), con la instrucción explícita en el system prompt de NO inventar un valor de relleno. `events.move_event()` ahora acepta ambos como `None` y usa la fecha/hora original del evento (vía `_local_time()`) como default para el campo omitido. Se agregó `describe_new_schedule()` para construir el texto de la propuesta sin asumir que ambos campos existen, usado por `main.py` y `conversation.py` por igual.
+
+**Verificación en vivo ejecutada (2026-06-25):**
+- Servidor real levantado (`python -m calendar_agent.webapp`), conversación multi-turno completa contra Calendar/Anthropic reales con `curl` + cookie jar (sin navegador disponible en este entorno; el usuario puede repetirlo visualmente abriendo `http://127.0.0.1:8000`): lectura directa, crear con confirmación (HITL, hora local correcta), aclaración de ambigüedad con memoria de turno (encontró el bug de `<UNKNOWN>`), fix, reinicio del servidor, repetición del mismo flujo → propuesta correcta ("a 2026-07-02", sin hora inventada) y hora original preservada tras el move. Borrado del evento de prueba y verificación de que el calendario quedó limpio. Verificado también el camino de cancelación (decline → no se modifica el calendario).
+- `python -m pytest` → 68/68 tests pasan (49 previos + 19 nuevos: `test_conversation.py`, `test_webapp.py`, tests de `history` en `test_intent.py`, tests de `nueva_fecha`/`nueva_hora` opcionales y `describe_new_schedule` en `test_events.py`).
+
+**Aprendizaje:** un caso de uso nuevo (multi-turno) puede re-exponer un bug latente en código de un hito ya cerrado (H3) que nunca se manifestó porque las pruebas anteriores siempre cubrieron los campos requeridos juntos. La verificación en vivo de una capa nueva debe ejercitar también las combinaciones parciales de los hitos que reutiliza, no solo el camino feliz de la capa nueva en sí.
+
+**Fecha:** 2026-06-25 (Capa 2).

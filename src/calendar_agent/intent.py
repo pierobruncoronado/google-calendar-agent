@@ -55,10 +55,22 @@ TOOLS = [
                     "type": "string",
                     "description": "Descripción que identifica el evento a mover (título y/u hora original mencionada por el usuario).",
                 },
-                "nueva_fecha": {"type": "string", "description": "Nueva fecha, formato ISO YYYY-MM-DD."},
-                "nueva_hora": {"type": "string", "description": "Nueva hora, formato HH:MM (24h)."},
+                "nueva_fecha": {
+                    "type": "string",
+                    "description": (
+                        "Nueva fecha, formato ISO YYYY-MM-DD. Omite este campo si el usuario solo "
+                        "cambia la hora y no menciona una fecha nueva."
+                    ),
+                },
+                "nueva_hora": {
+                    "type": "string",
+                    "description": (
+                        "Nueva hora, formato HH:MM (24h). Omite este campo si el usuario solo cambia "
+                        "la fecha y no menciona una hora nueva."
+                    ),
+                },
             },
-            "required": ["descripcion_evento", "nueva_fecha", "nueva_hora"],
+            "required": ["descripcion_evento"],
         },
     },
     {
@@ -113,6 +125,9 @@ def _build_system_prompt(today: date) -> str:
         "Cuando el usuario mencione un día de la semana sin fecha exacta (ej. 'el jueves'), "
         "interpreta la PRÓXIMA ocurrencia de ese día a partir de hoy (sin incluir hoy mismo "
         "si hoy es ese día). Todas las fechas en tu respuesta deben ir en formato ISO YYYY-MM-DD. "
+        "Al mover un evento, si el usuario solo menciona una nueva fecha (sin hora) o solo una "
+        "nueva hora (sin fecha), omite por completo el campo que no mencionó — NUNCA inventes "
+        "un valor de relleno para ese campo. "
         "Si el usuario pide mover o borrar un evento sin describir cuál (ej. 'muévelo', 'bórralo' "
         "sin título ni hora de referencia), o si la fecha/hora sigue siendo ambigua después de "
         "aplicar la regla anterior, llama a 'request_clarification' con la pregunta exacta que "
@@ -120,7 +135,7 @@ def _build_system_prompt(today: date) -> str:
     )
 
 
-def extract_intent(text: str, today: date | None = None) -> dict:
+def extract_intent(text: str, today: date | None = None, history: list[dict] | None = None) -> dict:
     today = today or date.today()
 
     api_key = os.environ.get("ANTHROPIC_API_KEY")
@@ -130,12 +145,14 @@ def extract_intent(text: str, today: date | None = None) -> dict:
     model = os.environ.get("ANTHROPIC_MODEL", DEFAULT_MODEL)
     client = Anthropic(api_key=api_key)
 
+    messages = [*(history or []), {"role": "user", "content": text}]
+
     try:
         response = client.messages.create(
             model=model,
             max_tokens=1024,
             system=_build_system_prompt(today),
-            messages=[{"role": "user", "content": text}],
+            messages=messages,
             tools=TOOLS,
             tool_choice={"type": "any"},
         )

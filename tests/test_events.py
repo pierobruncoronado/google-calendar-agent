@@ -12,6 +12,7 @@ from calendar_agent.events import (
     custom_range,
     delete_event,
     describe_event,
+    describe_new_schedule,
     find_event_by_description,
     format_events_natural_language,
     list_events,
@@ -161,6 +162,22 @@ def test_describe_event_all_day():
     assert describe_event(event) == "Vacaciones (2026-06-25)"
 
 
+def test_describe_new_schedule_with_both_fields():
+    assert describe_new_schedule("2026-06-25", "16:00") == "2026-06-25 16:00"
+
+
+def test_describe_new_schedule_with_only_date():
+    assert describe_new_schedule("2026-06-25", None) == "2026-06-25"
+
+
+def test_describe_new_schedule_with_only_time():
+    assert describe_new_schedule(None, "16:00") == "16:00"
+
+
+def test_describe_new_schedule_with_neither():
+    assert describe_new_schedule(None, None) == "(sin cambios)"
+
+
 def test_create_event_calls_insert_with_correct_body():
     service = MagicMock()
     service.events.return_value.insert.return_value.execute.return_value = {"id": "abc123"}
@@ -252,6 +269,38 @@ def test_move_event_wraps_http_error_as_calendarerror():
 
     with pytest.raises(CalendarError):
         move_event(service, "evt1", "2026-06-25", "16:00")
+
+
+def test_move_event_keeps_original_time_when_nueva_hora_omitted():
+    service = MagicMock()
+    service.events.return_value.get.return_value.execute.return_value = {
+        "start": {"dateTime": "2026-06-24T14:00:00-05:00"},
+        "end": {"dateTime": "2026-06-24T15:00:00-05:00"},
+    }
+    service.events.return_value.patch.return_value.execute.return_value = {"id": "evt1"}
+
+    move_event(service, "evt1", nueva_fecha="2026-06-25")
+
+    body = service.events.return_value.patch.call_args.kwargs["body"]
+    new_start = datetime.fromisoformat(body["start"]["dateTime"])
+    assert new_start.date().isoformat() == "2026-06-25"
+    assert new_start.hour == 14 and new_start.minute == 0
+
+
+def test_move_event_keeps_original_date_when_nueva_fecha_omitted():
+    service = MagicMock()
+    service.events.return_value.get.return_value.execute.return_value = {
+        "start": {"dateTime": "2026-06-24T14:00:00-05:00"},
+        "end": {"dateTime": "2026-06-24T15:00:00-05:00"},
+    }
+    service.events.return_value.patch.return_value.execute.return_value = {"id": "evt1"}
+
+    move_event(service, "evt1", nueva_hora="16:00")
+
+    body = service.events.return_value.patch.call_args.kwargs["body"]
+    new_start = datetime.fromisoformat(body["start"]["dateTime"])
+    assert new_start.date().isoformat() == "2026-06-24"
+    assert new_start.hour == 16
 
 
 def test_delete_event_calls_delete_with_event_id():

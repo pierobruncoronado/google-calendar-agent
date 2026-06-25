@@ -67,7 +67,13 @@
 - [x] **H4 — Escritura + HITL:** crear/mover/borrar con confirmación. Verify: propone, espera OK, ejecuta solo tras confirmación.
 - [x] **H5 — Errores:** backoff en 429, mensajes claros en permisos/no-existe/ambigüedad. Verify: evals de cada caso de error.
 - [x] **H6 — Deploy + README reproducible.** Verify: corre desde cero siguiendo el README.
-- [ ] **(Capa 2, después del núcleo) — Frontend mínimo mostrable.**
+- [x] **(Capa 2, después del núcleo) — Frontend mínimo mostrable.** Web UI simple (FastAPI + HTML/JS vanilla, sin build step) con conversación multi-turno. Decisión de alcance (2026-06-25, ver DECISIONS.md): el frontend NO es CLI elaborado ni framework JS — una sola página, sin Jinja2, sin React.
+
+**Criterios de aceptación de Capa 2 (extienden los de §5, mismo HITL, ahora multi-turno):**
+- CUANDO el usuario interactúa vía la web UI, EL SISTEMA DEBE preservar el mismo comportamiento HITL de §5 (proponer la acción exacta y esperar confirmación explícita) — la confirmación ahora ocurre en un segundo turno HTTP, no bloqueando un solo request.
+- CUANDO el agente pide aclaración (criterio de ambigüedad de §5) Y el usuario responde en el turno siguiente, EL SISTEMA DEBE incorporar esa respuesta junto con el mensaje original al re-extraer la intención (memoria de turno anterior), Y NO perder el contexto ni pedir que el usuario repita todo desde cero.
+- CUANDO se reinicia el proceso del servidor, ES ACEPTABLE perder el estado de conversación en memoria (sin DB en v1) — no es un criterio de falla.
+- El CLI existente (`main.py`) NO se modifica ni se refactoriza para esto — es una capa nueva y separada que reutiliza los mismos módulos `events.py`/`intent.py`.
 
 ## 7. Flujos = evals (el puente spec→eval)
 Cada criterio EARS de §5 se copia como caso de eval. Baseline primero, luego umbral.
