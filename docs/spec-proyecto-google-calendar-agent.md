@@ -55,6 +55,10 @@
 - CUANDO el usuario pide crear, mover o borrar un evento, EL SISTEMA DEBE primero proponer la acción exacta (qué, cuándo, con qué detalles) Y esperar confirmación explícita del usuario ANTES de ejecutar contra la API.
 - CUANDO el usuario NO confirma (o dice que no), EL SISTEMA DEBE cancelar la acción Y NO modificar el calendario.
 
+**Identificación de eventos por descripción natural:**
+- CUANDO el usuario refiere un evento en lenguaje natural ("café de mañana"), EL SISTEMA NO DEBE hacer match literal de strings contra los títulos de eventos.
+- EL SISTEMA DEBE obtener la lista de eventos en la ventana temporal relevante Y usar el LLM para identificar cuál evento corresponde a la descripción del usuario (mismo patrón de forced tool-use que H3).
+
 **Manejo de errores (el muro de integración):**
 - CUANDO la API devuelve rate limit (429), EL SISTEMA DEBE reintentar con backoff Y NO crashear.
 - CUANDO la API devuelve error de permisos o el evento no existe, EL SISTEMA DEBE reportar el error en lenguaje claro Y NO fallar en silencio.

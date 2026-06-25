@@ -1,5 +1,6 @@
 """Mocked tests for Calendar event listing/formatting. No live Google API calls."""
 
+import os
 from datetime import datetime, timedelta, timezone
 from unittest.mock import MagicMock
 
@@ -212,11 +213,16 @@ def test_find_event_by_description_returns_first_match():
         "items": [{"id": "evt1", "summary": "Reunión"}]
     }
 
-    result = find_event_by_description(service, "reunión", now=datetime(2026, 6, 24, 9, 0, tzinfo=UTC))
+    result = find_event_by_description(
+        service,
+        "reunión",
+        now=datetime(2026, 6, 24, 9, 0, tzinfo=UTC),
+        _matcher=lambda events, _: events[0],
+    )
 
     assert result == {"id": "evt1", "summary": "Reunión"}
     kwargs = service.events.return_value.list.call_args.kwargs
-    assert kwargs["q"] == "reunión"
+    assert "q" not in kwargs
     assert kwargs["calendarId"] == "primary"
 
 
@@ -385,3 +391,47 @@ def test_delete_event_404_gives_clear_not_found_message():
 
     with pytest.raises(CalendarError, match="no existe"):
         delete_event(service, "evt1")
+
+
+@pytest.mark.skipif(
+    not os.environ.get("ANTHROPIC_API_KEY"),
+    reason="requires ANTHROPIC_API_KEY for LLM matching eval",
+)
+def test_find_event_by_description_llm_matching_behavioral():
+    """Behavioral eval: 'café de mañana' must resolve to 'Café con Vania'.
+
+    OLD impl (q=literal string): service returns [] for q='café de mañana'
+    because no event title contains that exact phrase → returns None → FAILS.
+    NEW impl (LLM matching): service returns all events without q filter →
+    LLM identifies 'Café con Vania' as the match → returns event → PASSES.
+    """
+    service = MagicMock()
+
+    def list_side_effect(**kwargs):
+        mock = MagicMock()
+        if kwargs.get("q"):
+            mock.execute.return_value = {"items": []}
+        else:
+            mock.execute.return_value = {
+                "items": [
+                    {
+                        "id": "evt1",
+                        "summary": "Café con Vania",
+                        "start": {"dateTime": "2026-06-26T10:00:00Z"},
+                        "end": {"dateTime": "2026-06-26T11:00:00Z"},
+                    }
+                ]
+            }
+        return mock
+
+    service.events.return_value.list.side_effect = list_side_effect
+
+    result = find_event_by_description(
+        service,
+        "café de mañana",
+        now=datetime(2026, 6, 25, 9, 0, tzinfo=UTC),
+    )
+
+    assert result is not None, "LLM debió identificar 'Café con Vania' como el café de mañana"
+    assert result["id"] == "evt1"
+    assert result["summary"] == "Café con Vania"

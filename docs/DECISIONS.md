@@ -139,3 +139,17 @@ Registro de decisiones no fijadas textualmente en el spec, tomadas durante la im
 **Aprendizaje:** un caso de uso nuevo (multi-turno) puede re-exponer un bug latente en código de un hito ya cerrado (H3) que nunca se manifestó porque las pruebas anteriores siempre cubrieron los campos requeridos juntos. La verificación en vivo de una capa nueva debe ejercitar también las combinaciones parciales de los hitos que reutiliza, no solo el camino feliz de la capa nueva en sí.
 
 **Fecha:** 2026-06-25 (Capa 2).
+
+## H5 Fix — Event matching via LLM (gap de spec)
+
+**Problema:** `find_event_by_description` usaba `q=descripcion` de Google Calendar API — búsqueda literal de texto. Cuando el usuario dice "cancela el café de mañana", `extract_intent` extrae `descripcion_evento: "café de mañana"`, la API recibe `q="café de mañana"` y no encuentra "Café con Vania" porque "de mañana" no aparece en el título. Resultado: falso negativo.
+
+**Root cause del gap:** el spec §5 nunca especificó el criterio de match para `move_event`/`delete_event` — solo decía "propone la acción exacta". El uso de `q=` fue una elección implícita de implementación, nunca validada contra lenguaje real de usuario. Los tests unitarios validaban la implementación contra sí misma (`assert kwargs["q"] == "reunión"` + mock que devolvía el evento para cualquier `q`) — no contra el comportamiento de usuario real.
+
+**Decisión:** eliminar el filtro `q=` de la llamada a Google Calendar API. En su lugar: (1) obtener la lista de eventos en la ventana temporal (sin filtro de texto, `maxResults=20`), (2) si hay eventos, llamar al LLM con forced tool-use para identificar cuál corresponde a la descripción del usuario (`select_event(index)` o `no_match()`). Mismo patrón de Anthropic SDK que ya usa `extract_intent` en `intent.py`.
+
+**Criterio de aceptación del fix:** un test behavioral end-to-end donde el usuario dice "café de mañana" y el evento se llama "Café con Vania" debe fallar con la implementación vieja y pasar con la nueva.
+
+**Por qué no se usa el `q=` como pre-filtro:** añadir pre-filtro parcial complicaría el código sin garantía de mejora — Google's text search no está documentada como case/accent-insensitive para todos los idiomas, y añade una segunda llamada API dependiente del resultado del filtro. La ventana temporal de 30 días es suficiente acotación.
+
+**Fecha:** 2026-06-25 (H5 fix post-Capa 2).

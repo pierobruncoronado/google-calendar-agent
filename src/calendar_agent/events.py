@@ -2,11 +2,15 @@
 
 import json
 import logging
+import os
 import time
 from datetime import date, datetime, timedelta
 from zoneinfo import ZoneInfo
 
+from anthropic import Anthropic, APIError
 from googleapiclient.errors import HttpError
+
+_DEFAULT_MODEL = "claude-haiku-4-5-20251001"
 
 logger = logging.getLogger(__name__)
 
@@ -154,8 +158,78 @@ def create_event(service, titulo: str, fecha: str, hora: str, duracion_minutos: 
         raise CalendarError(_calendar_error_message("crear el evento", exc)) from exc
 
 
+def _match_event_llm(events: list[dict], descripcion: str) -> dict | None:
+    """Use the LLM to identify which event best matches the user's natural-language description."""
+    api_key = os.environ.get("ANTHROPIC_API_KEY")
+    if not api_key:
+        raise CalendarError("Falta ANTHROPIC_API_KEY — no se puede identificar el evento.")
+
+    events_text = "\n".join(
+        f"{i}. {e.get('summary', '(sin título)')} — "
+        f"{e.get('start', {}).get('dateTime', e.get('start', {}).get('date', ''))}"
+        for i, e in enumerate(events)
+    )
+    tools = [
+        {
+            "name": "select_event",
+            "description": "Selecciona el evento que mejor corresponde a la descripción del usuario.",
+            "input_schema": {
+                "type": "object",
+                "properties": {
+                    "index": {
+                        "type": "integer",
+                        "description": "Índice (base 0) del evento que corresponde.",
+                    }
+                },
+                "required": ["index"],
+            },
+        },
+        {
+            "name": "no_match",
+            "description": "Ningún evento de la lista corresponde a la descripción del usuario.",
+            "input_schema": {"type": "object", "properties": {}, "required": []},
+        },
+    ]
+
+    model = os.environ.get("ANTHROPIC_MODEL", _DEFAULT_MODEL)
+    client = Anthropic(api_key=api_key)
+    try:
+        response = client.messages.create(
+            model=model,
+            max_tokens=256,
+            system=(
+                "Identifica cuál evento de calendario corresponde a la descripción del usuario. "
+                "Usa 'select_event' con el índice del evento que mejor encaja, "
+                "o 'no_match' si ninguno corresponde."
+            ),
+            messages=[
+                {
+                    "role": "user",
+                    "content": f"Eventos:\n{events_text}\n\nDescripción del usuario: '{descripcion}'",
+                }
+            ],
+            tools=tools,
+            tool_choice={"type": "any"},
+        )
+    except APIError as exc:
+        _log_event(logging.ERROR, "event_match_llm_failed", error_type=type(exc).__name__)
+        raise CalendarError("Falló la identificación del evento por lenguaje natural.") from exc
+
+    tool_use = next((b for b in response.content if b.type == "tool_use"), None)
+    if tool_use is None or tool_use.name == "no_match":
+        return None
+    index = tool_use.input.get("index", -1)
+    if 0 <= index < len(events):
+        return events[index]
+    return None
+
+
 def find_event_by_description(
-    service, descripcion: str, now: datetime | None = None, window_days: int = 30
+    service,
+    descripcion: str,
+    now: datetime | None = None,
+    window_days: int = 30,
+    _matcher=None,
 ) -> dict | None:
     now = now or datetime.now().astimezone()
     time_max = now + timedelta(days=window_days)
@@ -164,12 +238,11 @@ def find_event_by_description(
         response = _execute_with_retry(
             service.events().list(
                 calendarId="primary",
-                q=descripcion,
                 timeMin=now.isoformat(),
                 timeMax=time_max.isoformat(),
                 singleEvents=True,
                 orderBy="startTime",
-                maxResults=1,
+                maxResults=20,
             )
         )
     except HttpError as exc:
@@ -177,7 +250,10 @@ def find_event_by_description(
         raise CalendarError(_calendar_error_message("buscar el evento", exc)) from exc
 
     items = response.get("items", [])
-    return items[0] if items else None
+    if not items:
+        return None
+    matcher = _matcher or _match_event_llm
+    return matcher(items, descripcion)
 
 
 def move_event(service, event_id: str, nueva_fecha: str | None = None, nueva_hora: str | None = None) -> dict:
