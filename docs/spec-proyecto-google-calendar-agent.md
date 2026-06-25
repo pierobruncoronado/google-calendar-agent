@@ -32,6 +32,7 @@
 - **Output estructurado:** la extracción de parámetros (fecha/hora/título) vía forced tool-use del LLM, no parseo de texto libre.
 - **Costo:** medir tokens/operación, igual que el proyecto clínica.
 - **Mantenimiento:** refresh token automático (no re-autenticar en cada sesión).
+- **Dependencia externa (lead-time) — H3:** `ANTHROPIC_API_KEY` válida en `.env`, igual de bloqueante que `credentials.json` de Google para H1. Sin esta key, H3 no puede arrancar (la interpretación NL depende de la API de Anthropic). Obtenerla con anticipación, no al momento de implementar H3.
 
 ## 4. Decisiones previas (NO re-litigar)
 - v1 = solo Calendar. Gmail es v2. (Decidido en entrevista de spec.)
@@ -62,7 +63,7 @@
 ## 6. Desglose en tareas atómicas (hitos)
 - [x] **H1 — OAuth:** consent flow + guardar/refrescar tokens. Verify: autenticar una vez, segunda corrida no re-pide login.
 - [x] **H2 — Lectura:** consultar eventos por rango. Verify: "¿qué tengo mañana?" devuelve eventos reales del calendario.
-- [ ] **H3 — Interpretación NL:** LLM extrae intención + parámetros vía tool-use. Verify: evals de extracción (fecha/hora/título correctos).
+- [x] **H3 — Interpretación NL:** LLM extrae intención + parámetros vía tool-use. Verify: evals de extracción (fecha/hora/título correctos).
 - [ ] **H4 — Escritura + HITL:** crear/mover/borrar con confirmación. Verify: propone, espera OK, ejecuta solo tras confirmación.
 - [ ] **H5 — Errores:** backoff en 429, mensajes claros en permisos/no-existe/ambigüedad. Verify: evals de cada caso de error.
 - [ ] **H6 — Deploy + README reproducible.** Verify: corre desde cero siguiendo el README.
@@ -85,6 +86,6 @@ Cuando algo cambie (bug/feature), se edita ESTE spec primero, luego el código. 
 - [x] ¿El alcance se shippea? Sí — Calendar solo, v1 acotado.
 - [x] ¿Cada cosa es imprescindible para v1? Sí — lectura + escritura + HITL + errores = el muro de integración.
 - [x] ¿Sé medir "funciona"? Sí — evals de §7.
-- [x] ¿Lead-time externo? Sí — crear proyecto en Google Cloud Console + habilitar Calendar API + OAuth consent screen. ARRANCAR ESTO YA (puede tardar en aprobarse el consent screen).
+- [x] ¿Lead-time externo? Sí — (1) crear proyecto en Google Cloud Console + habilitar Calendar API + OAuth consent screen (H1/H2). ARRANCAR ESTO YA (puede tardar en aprobarse el consent screen). (2) `ANTHROPIC_API_KEY` válida en `.env` (H3) — ver §3.
 - [x] ¿Decisiones registradas? Sí — §4 + DECISIONS.md.
 - [x] ¿Nivel de triage correcto? Sí — Nivel 3, proyecto entero, lo amerita.

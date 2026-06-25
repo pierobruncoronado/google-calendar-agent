@@ -43,3 +43,30 @@ Registro de decisiones no fijadas textualmente en el spec, tomadas durante la im
 **Aprendizaje:** habilitar el scope OAuth (H1) no habilita la API en sí — son dos gates independientes en Google Cloud Console (OAuth consent + API enablement). Un 403 `accessNotConfigured` en cualquier llamada futura a una API nueva de Google debe hacer sospechar primero de este gate, no del código.
 
 **Fecha:** 2026-06-24 (H2).
+
+## H3 — Hueco de spec detectado: ANTHROPIC_API_KEY no declarado como lead-time externo
+
+**Decisión:** agregar `ANTHROPIC_API_KEY` a §3 (Restricciones/NFRs) y al checklist de estrés (§8) del spec como dependencia externa con lead-time, al mismo nivel que `credentials.json`/OAuth consent screen de Google.
+
+**Por qué:** al arrancar H3 (interpretación NL vía tool-use de la API de Anthropic) se detectó que no existe `.env` en el proyecto y que el spec original (Fase 1, checklist de estrés §8) solo marcaba como lead-time externo el setup de Google Cloud Console — nunca mencionó la API key de Anthropic, pese a que el stack (§3) ya declaraba "Anthropic SDK para el LLM" desde el principio. Es un hueco de completitud del spec: una dependencia externa bloqueante que no fue identificada en la fase de diseño, solo se hizo visible al tocar el código que la necesita.
+
+**Aprendizaje:** el checklist de estrés de §8 se llenó mirando solo la integración más obvia (Google OAuth) y no se generalizó la pregunta "¿qué credenciales/lead-time externo necesita CADA hito, no solo el primero?". Para futuros proyectos con múltiples integraciones externas, revisar lead-time por hito, no solo una vez al congelar el spec.
+
+**Fecha:** 2026-06-24 (detectado al arrancar H3, antes de escribir código).
+
+## H3 — Alcance de los 4 intents y cierre del hito
+
+**Decisión:** el tool-schema de extracción NL (`src/calendar_agent/intent.py`) define las 4 operaciones del spec (`read_events`, `create_event`, `move_event`, `delete_event`) con `tool_choice={"type": "any"}` forzando al modelo a llamar exactamente una. `main.py` conecta `read_events` a la lectura real (reusa `list_events`/`format_events_natural_language` de H2, sin confirmación, como exige §5). Para los 3 intents de escritura, `main.py` solo imprime la acción propuesta extraída (sin ejecutar contra la API) — la ejecución real + HITL es H4, no H3. Ambigüedad de fecha ("el jueves" sin contexto claro) queda explícitamente fuera de H3 y se implementará en H5, según el desglose del spec.
+
+**Por qué:** diseñar los 4 schemas ahora evita rediseñar la extracción en H4 (los 3 ejemplos de NL de escritura ya están en §1 del spec), pero ejecutar solo lectura respeta el límite real del hito (H3 = extracción, H4 = escritura+HITL) sin sobre-alcance.
+
+**Verificación en vivo ejecutada (2026-06-24):**
+- Llamada real a la API de Anthropic (modelo `claude-haiku-4-5-20251001`) con el caso de eval exacto del spec §7: `"agéndame dentista jueves 3pm 1 hora"` con `today=2026-06-24` (miércoles) → `{"intent": "create_event", "params": {"titulo": "Dentista", "fecha": "2026-06-25", "hora": "15:00", "duracion_minutos": 60}}`. Coincide con el resultado esperado del spec (fecha resuelta correctamente al próximo jueves).
+- 3 casos adicionales verificados en vivo: lectura (`"¿qué tengo el viernes?"` → rango correcto), mover (`"mueve mi reunión de las 2 a las 4"`) y borrar (`"borra mi reunión de mañana a las 10"`) — los 4 intents extraen correctamente.
+- CLI end-to-end (`PYTHONPATH=src python -m calendar_agent.main "<texto libre>"`) verificado contra el calendario real: la rama de lectura devuelve eventos reales (o "no tienes eventos", sin inventar); la rama de escritura imprime la propuesta sin tocar la API.
+- Costo medido: cada llamada loguea `intent_extraction_tokens` (input/output tokens) en JSON, cumpliendo el eval de costo de §7.
+- `python -m pytest -q` → 23/23 tests pasan (15 previos + 8 nuevos de `test_intent.py`, todos mockeados, sin llamadas reales a la API).
+
+**Aprendizaje:** el caracter `�` visible en la consola de Windows al imprimir texto con tildes es el mismo artefacto de renderizado de terminal documentado en el cierre de H2 (cp1252), no un bug de encoding en el código ni en la respuesta del modelo.
+
+**Fecha:** 2026-06-24 (H3).
