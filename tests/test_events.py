@@ -8,9 +8,14 @@ from googleapiclient.errors import HttpError
 
 from calendar_agent.events import (
     CalendarError,
+    create_event,
     custom_range,
+    delete_event,
+    describe_event,
+    find_event_by_description,
     format_events_natural_language,
     list_events,
+    move_event,
     today_range,
     tomorrow_range,
 )
@@ -137,3 +142,130 @@ def test_custom_range_is_inclusive_of_end_date():
     assert end.date().isoformat() == "2026-06-28"
     assert start.hour == 0 and start.minute == 0 and start.second == 0
     assert end - start == timedelta(days=3)
+
+
+def test_describe_event_with_time():
+    event = {"summary": "Dentista", "start": {"dateTime": "2026-06-25T15:00:00-05:00"}}
+
+    assert describe_event(event) == "Dentista (2026-06-25 15:00)"
+
+
+def test_describe_event_all_day():
+    event = {"summary": "Vacaciones", "start": {"date": "2026-06-25"}}
+
+    assert describe_event(event) == "Vacaciones (2026-06-25)"
+
+
+def test_create_event_calls_insert_with_correct_body():
+    service = MagicMock()
+    service.events.return_value.insert.return_value.execute.return_value = {"id": "abc123"}
+
+    result = create_event(service, "Dentista", "2026-06-25", "15:00", 60)
+
+    assert result == {"id": "abc123"}
+    kwargs = service.events.return_value.insert.call_args.kwargs
+    assert kwargs["calendarId"] == "primary"
+    body = kwargs["body"]
+    assert body["summary"] == "Dentista"
+    start_dt = datetime.fromisoformat(body["start"]["dateTime"])
+    end_dt = datetime.fromisoformat(body["end"]["dateTime"])
+    assert start_dt.hour == 15 and start_dt.minute == 0
+    assert end_dt - start_dt == timedelta(minutes=60)
+
+
+def test_create_event_wraps_http_error_as_calendarerror():
+    service = MagicMock()
+    fake_response = MagicMock(status=403, reason="Forbidden")
+    service.events.return_value.insert.return_value.execute.side_effect = HttpError(
+        fake_response, b'{"error": {"message": "Forbidden"}}'
+    )
+
+    with pytest.raises(CalendarError):
+        create_event(service, "Dentista", "2026-06-25", "15:00", 60)
+
+
+def test_find_event_by_description_returns_first_match():
+    service = MagicMock()
+    service.events.return_value.list.return_value.execute.return_value = {
+        "items": [{"id": "evt1", "summary": "Reunión"}]
+    }
+
+    result = find_event_by_description(service, "reunión", now=datetime(2026, 6, 24, 9, 0, tzinfo=UTC))
+
+    assert result == {"id": "evt1", "summary": "Reunión"}
+    kwargs = service.events.return_value.list.call_args.kwargs
+    assert kwargs["q"] == "reunión"
+    assert kwargs["calendarId"] == "primary"
+
+
+def test_find_event_by_description_returns_none_when_no_match():
+    service = MagicMock()
+    service.events.return_value.list.return_value.execute.return_value = {"items": []}
+
+    result = find_event_by_description(service, "reunión", now=datetime(2026, 6, 24, 9, 0, tzinfo=UTC))
+
+    assert result is None
+
+
+def test_find_event_by_description_wraps_http_error_as_calendarerror():
+    service = MagicMock()
+    fake_response = MagicMock(status=403, reason="Forbidden")
+    service.events.return_value.list.return_value.execute.side_effect = HttpError(
+        fake_response, b'{"error": {"message": "Forbidden"}}'
+    )
+
+    with pytest.raises(CalendarError):
+        find_event_by_description(service, "reunión", now=datetime(2026, 6, 24, 9, 0, tzinfo=UTC))
+
+
+def test_move_event_preserves_duration_and_patches_new_time():
+    service = MagicMock()
+    service.events.return_value.get.return_value.execute.return_value = {
+        "start": {"dateTime": "2026-06-24T14:00:00-05:00"},
+        "end": {"dateTime": "2026-06-24T15:00:00-05:00"},
+    }
+    service.events.return_value.patch.return_value.execute.return_value = {"id": "evt1"}
+
+    result = move_event(service, "evt1", "2026-06-25", "16:00")
+
+    assert result == {"id": "evt1"}
+    kwargs = service.events.return_value.patch.call_args.kwargs
+    assert kwargs["eventId"] == "evt1"
+    body = kwargs["body"]
+    new_start = datetime.fromisoformat(body["start"]["dateTime"])
+    new_end = datetime.fromisoformat(body["end"]["dateTime"])
+    assert new_start.hour == 16 and new_start.date().isoformat() == "2026-06-25"
+    assert new_end - new_start == timedelta(hours=1)
+
+
+def test_move_event_wraps_http_error_as_calendarerror():
+    service = MagicMock()
+    fake_response = MagicMock(status=404, reason="Not Found")
+    service.events.return_value.get.return_value.execute.side_effect = HttpError(
+        fake_response, b'{"error": {"message": "Not Found"}}'
+    )
+
+    with pytest.raises(CalendarError):
+        move_event(service, "evt1", "2026-06-25", "16:00")
+
+
+def test_delete_event_calls_delete_with_event_id():
+    service = MagicMock()
+    service.events.return_value.delete.return_value.execute.return_value = {}
+
+    delete_event(service, "evt1")
+
+    kwargs = service.events.return_value.delete.call_args.kwargs
+    assert kwargs["calendarId"] == "primary"
+    assert kwargs["eventId"] == "evt1"
+
+
+def test_delete_event_wraps_http_error_as_calendarerror():
+    service = MagicMock()
+    fake_response = MagicMock(status=404, reason="Not Found")
+    service.events.return_value.delete.return_value.execute.side_effect = HttpError(
+        fake_response, b'{"error": {"message": "Not Found"}}'
+    )
+
+    with pytest.raises(CalendarError):
+        delete_event(service, "evt1")

@@ -1,5 +1,5 @@
 """H1 entrypoint (verify OAuth) + H2 entrypoint (read events by range)
-+ H3 entrypoint (NL intent extraction)."""
++ H3 entrypoint (NL intent extraction) + H4 entrypoint (write + HITL)."""
 
 import logging
 import sys
@@ -10,9 +10,14 @@ from dotenv import load_dotenv
 from calendar_agent.auth import AuthError, get_calendar_service
 from calendar_agent.events import (
     CalendarError,
+    create_event,
     custom_range,
+    delete_event,
+    describe_event,
+    find_event_by_description,
     format_events_natural_language,
     list_events,
+    move_event,
     today_range,
     tomorrow_range,
 )
@@ -20,11 +25,7 @@ from calendar_agent.intent import IntentError, extract_intent
 
 logging.basicConfig(level=logging.INFO, format="%(message)s")
 
-_WRITE_INTENT_LABELS = {
-    "create_event": "crear",
-    "move_event": "mover",
-    "delete_event": "borrar",
-}
+_CONFIRM_YES = {"si", "sí", "s", "yes", "y"}
 
 
 def _resolve_range(arg: str):
@@ -35,13 +36,84 @@ def _resolve_range(arg: str):
     return custom_range(arg, arg), f"el {arg}"
 
 
-def _format_write_proposal(intent: str, params: dict) -> str:
-    label = _WRITE_INTENT_LABELS[intent]
-    details = ", ".join(f"{key}={value}" for key, value in params.items())
-    return f"Acción detectada: {label} evento ({details}). Ejecución pendiente (H4: requiere confirmación + escritura)."
+def _confirm(prompt: str, input_fn=input) -> bool:
+    print(prompt)
+    answer = input_fn("Confirmas? (si/no): ").strip().lower()
+    return answer in _CONFIRM_YES
 
 
-def _handle_nl_text(service, text: str) -> int:
+def _handle_create_event(service, params: dict, input_fn=input) -> int:
+    proposal = (
+        f"Voy a crear el evento '{params['titulo']}' el {params['fecha']} a las "
+        f"{params['hora']} (duración {params['duracion_minutos']} min)."
+    )
+    if not _confirm(proposal, input_fn):
+        print("Acción cancelada. No se modificó el calendario.")
+        return 0
+
+    try:
+        create_event(service, params["titulo"], params["fecha"], params["hora"], params["duracion_minutos"])
+    except CalendarError as exc:
+        print(f"Error al crear el evento: {exc}", file=sys.stderr)
+        return 1
+
+    print("Evento creado.")
+    return 0
+
+
+def _handle_move_event(service, params: dict, input_fn=input) -> int:
+    try:
+        event = find_event_by_description(service, params["descripcion_evento"])
+    except CalendarError as exc:
+        print(f"Error al buscar el evento: {exc}", file=sys.stderr)
+        return 1
+
+    if event is None:
+        print(f"No encontré ningún evento que coincida con '{params['descripcion_evento']}'.")
+        return 1
+
+    proposal = f"Voy a mover '{describe_event(event)}' a {params['nueva_fecha']} {params['nueva_hora']}."
+    if not _confirm(proposal, input_fn):
+        print("Acción cancelada. No se modificó el calendario.")
+        return 0
+
+    try:
+        move_event(service, event["id"], params["nueva_fecha"], params["nueva_hora"])
+    except CalendarError as exc:
+        print(f"Error al mover el evento: {exc}", file=sys.stderr)
+        return 1
+
+    print("Evento movido.")
+    return 0
+
+
+def _handle_delete_event(service, params: dict, input_fn=input) -> int:
+    try:
+        event = find_event_by_description(service, params["descripcion_evento"])
+    except CalendarError as exc:
+        print(f"Error al buscar el evento: {exc}", file=sys.stderr)
+        return 1
+
+    if event is None:
+        print(f"No encontré ningún evento que coincida con '{params['descripcion_evento']}'.")
+        return 1
+
+    proposal = f"Voy a borrar '{describe_event(event)}'."
+    if not _confirm(proposal, input_fn):
+        print("Acción cancelada. No se modificó el calendario.")
+        return 0
+
+    try:
+        delete_event(service, event["id"])
+    except CalendarError as exc:
+        print(f"Error al borrar el evento: {exc}", file=sys.stderr)
+        return 1
+
+    print("Evento borrado.")
+    return 0
+
+
+def _handle_nl_text(service, text: str, input_fn=input) -> int:
     try:
         result = extract_intent(text, today=date.today())
     except IntentError as exc:
@@ -60,8 +132,15 @@ def _handle_nl_text(service, text: str) -> int:
         print(format_events_natural_language(events, f"entre {params['fecha_inicio']} y {params['fecha_fin']}"))
         return 0
 
-    print(_format_write_proposal(intent, params))
-    return 0
+    if intent == "create_event":
+        return _handle_create_event(service, params, input_fn)
+    if intent == "move_event":
+        return _handle_move_event(service, params, input_fn)
+    if intent == "delete_event":
+        return _handle_delete_event(service, params, input_fn)
+
+    print(f"Intención no reconocida: {intent}", file=sys.stderr)
+    return 1
 
 
 def main() -> int:

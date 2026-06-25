@@ -70,3 +70,21 @@ Registro de decisiones no fijadas textualmente en el spec, tomadas durante la im
 **Aprendizaje:** el caracter `�` visible en la consola de Windows al imprimir texto con tildes es el mismo artefacto de renderizado de terminal documentado en el cierre de H2 (cp1252), no un bug de encoding en el código ni en la respuesta del modelo.
 
 **Fecha:** 2026-06-24 (H3).
+
+## H4 — Resolución de evento por descripción libre (move/delete)
+
+**Decisión:** para `move_event`/`delete_event`, donde la extracción NL (H3) solo da una `descripcion_evento` en texto libre (no un ID), se busca con `events().list(q=descripcion, timeMin=ahora, timeMax=ahora+30d)` y se toma el primer resultado (el más próximo en el tiempo) como candidato. Si no hay match, se reporta error sin pedir confirmación (nada que confirmar). Si hay match, se propone ESE evento específico (con su título/hora real) en el paso HITL — si es el equivocado, el usuario dice "no" y no se modifica nada.
+
+**Por qué:** resolver ambigüedad entre múltiples matches (pedir aclaración explícita al usuario) es comportamiento de H5 según ya quedado registrado en el cierre de H3. Para H4, mostrar el evento específico encontrado en la confirmación ya cumple el EARS de §5 ("propone la acción exacta... espera confirmación") porque el usuario ve el detalle real antes de aprobar.
+
+**Fecha:** 2026-06-24 (H4).
+
+## H4 — Bug de zona horaria descubierto en verificación en vivo: la API de Calendar siempre devuelve `dateTime` en UTC
+
+**Decisión:** agregar una constante `LOCAL_TIMEZONE = "America/Lima"` en `events.py` y convertir explícitamente con `zoneinfo.ZoneInfo` antes de mostrar cualquier hora al usuario (`_local_time()`, usado por `_format_event_line` y `describe_event`). Se agregó `tzdata>=2024.1` a `requirements.txt` porque Windows no trae la base de datos IANA y `zoneinfo` la necesita ahí.
+
+**Por qué:** la verificación en vivo de H4 (crear → leer) mostró un evento creado para las 10:00 apareciendo como las 15:00 al leerlo de vuelta. Se inspeccionó el JSON crudo devuelto por la API y se confirmó que Google Calendar siempre serializa `start.dateTime`/`end.dateTime` en UTC (sufijo `Z`), sin importar qué offset se envió al crear — el campo `timeZone` es metadata para cálculos de recurrencia, no afecta el formato de `dateTime` en la respuesta. El código de H2 (`_format_event_line`) y el nuevo `describe_event` de H4 parseaban ese `dateTime` y mostraban la hora cruda asumiendo que ya estaba en hora local, sin convertir — funcionaba por casualidad en H2 porque la única verificación en vivo de ese hito fue contra un rango vacío (sin eventos con hora), así que el bug nunca se ejercitó hasta H4.
+
+**Aprendizaje:** un EARS de §5 ("propone la acción exacta") es más estricto que "no crashea" — requiere que el dato mostrado al usuario sea correcto, no solo que la llamada a la API tenga éxito. Verificar en vivo con datos vacíos (como hizo H2) no prueba el camino de formateo de fecha/hora; cualquier verificación en vivo futura que toque horarios reales debe incluir al menos un evento con hora explícita, no solo el caso "no hay eventos".
+
+**Fecha:** 2026-06-24 (H4, detectado en verificación en vivo, corregido antes de cerrar el hito).
