@@ -105,3 +105,17 @@ Registro de decisiones no fijadas textualmente en el spec, tomadas durante la im
 **Aprendizaje:** no todo EARS de error es igualmente verificable en vivo de forma segura — para casos donde reproducir la condición real es invasivo (rate limit, permisos), el test mockeado es la verificación primaria y corresponde decirlo explícitamente en el cierre del hito, no fingir una verificación en vivo que no ocurrió.
 
 **Fecha:** 2026-06-25 (H5).
+
+## H6 — Alcance de "Deploy" y verificación de reproducibilidad
+
+**Decisión:** "Deploy" en H6 se interpreta como reproducibilidad de setup (README), no infraestructura de hosting — el spec (§3) condiciona FastAPI/servicio a "si se expone como servicio", y v1 es explícitamente CLI. No se agregó Docker, CI ni hosting; eso no está pedido por ningún EARS de §5 y sería alcance no solicitado.
+
+**Verificación en vivo ejecutada (2026-06-25):**
+- Clone local real (`git clone` del repo a un directorio temporal) → confirmado que el checkout queda limpio: sin `.venv`, `.env`, `credentials.json` ni `token.json` (los 4 correctamente gitignored).
+- Siguiendo el README al pie de la letra: `py -3.12 -m venv .venv` + `pip install -r requirements-dev.txt` → instalación limpia sin errores.
+- `python -m pytest` desde ese checkout limpio (sin exportar `PYTHONPATH` manualmente) → 49/49 tests pasan, confirma que `pytest.ini` resuelve el layout `src/` tal como se documenta en el README.
+- Se copiaron `credentials.json`/`.env`/`token.json` reales (los secrets que el usuario ya obtuvo, consistente con los prerrequisitos del README — no se regeneran en cada clone) y se corrió `PYTHONPATH=src python -m calendar_agent.main "hoy"` y `"¿qué tengo el viernes?"` contra el calendario real desde el checkout limpio → ambos funcionaron end-to-end (OAuth refrescado en silencio, sin re-pedir login; lectura NL real vía Anthropic + Calendar).
+- **No se re-verificó el consent flow de OAuth desde cero** (clic de "permitir acceso" en navegador) — no hay navegador disponible en el entorno de ejecución del agente, y H1 ya lo verificó en vivo. Documentado como limitación conocida de esta verificación, no como gap silencioso.
+- Directorio temporal borrado después de la verificación (contenía copias de credenciales reales).
+
+**Fecha:** 2026-06-25 (H6).

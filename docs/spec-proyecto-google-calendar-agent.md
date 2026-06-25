@@ -66,7 +66,7 @@
 - [x] **H3 — Interpretación NL:** LLM extrae intención + parámetros vía tool-use. Verify: evals de extracción (fecha/hora/título correctos).
 - [x] **H4 — Escritura + HITL:** crear/mover/borrar con confirmación. Verify: propone, espera OK, ejecuta solo tras confirmación.
 - [x] **H5 — Errores:** backoff en 429, mensajes claros en permisos/no-existe/ambigüedad. Verify: evals de cada caso de error.
-- [ ] **H6 — Deploy + README reproducible.** Verify: corre desde cero siguiendo el README.
+- [x] **H6 — Deploy + README reproducible.** Verify: corre desde cero siguiendo el README.
 - [ ] **(Capa 2, después del núcleo) — Frontend mínimo mostrable.**
 
 ## 7. Flujos = evals (el puente spec→eval)
