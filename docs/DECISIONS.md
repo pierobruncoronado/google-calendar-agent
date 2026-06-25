@@ -88,3 +88,20 @@ Registro de decisiones no fijadas textualmente en el spec, tomadas durante la im
 **Aprendizaje:** un EARS de §5 ("propone la acción exacta") es más estricto que "no crashea" — requiere que el dato mostrado al usuario sea correcto, no solo que la llamada a la API tenga éxito. Verificar en vivo con datos vacíos (como hizo H2) no prueba el camino de formateo de fecha/hora; cualquier verificación en vivo futura que toque horarios reales debe incluir al menos un evento con hora explícita, no solo el caso "no hay eventos".
 
 **Fecha:** 2026-06-24 (H4, detectado en verificación en vivo, corregido antes de cerrar el hito).
+
+## H5 — Manejo de errores: retry/backoff, mensajes claros y aclaración de ambigüedad
+
+**Decisión:** se implementan las 3 piezas del hito en `events.py`/`intent.py`/`main.py`:
+- `_execute_with_retry()` envuelve las 5 llamadas a la API de Calendar (`list`, `insert`, `get`, `patch`, `delete`); reintenta con backoff exponencial (1s, 2s) solo en `429`, hasta 3 intentos, y propaga cualquier otro error o el 429 agotado.
+- `_calendar_error_message()` mapea `403` → "no tienes permiso para {acción}", `404` → "el evento no existe (puede haber sido borrado)", `429` agotado → mensaje de rate-limit, y deja el fallback genérico con el código HTTP para el resto.
+- Se agregó una 5ª tool `request_clarification` (`pregunta: string`) a `intent.py`, con el system prompt instruyendo al modelo a usarla cuando no pueda identificar el evento a mover/borrar (sin descripción) o cuando la fecha/hora sigue siendo ambigua tras la regla determinista de H3. `main.py` la despacha imprimiendo la pregunta, sin tocar la API ni pedir confirmación.
+
+**Verificación en vivo ejecutada (2026-06-25):**
+- `429` y `403` (permisos) **no se verificaron en vivo** — provocar un rate-limit real o un error de permisos real contra la cuenta real del desarrollador es invasivo y no reproducible de forma segura/determinista. Se cubren solo con tests mockeados (`HttpError` simulado), incluyendo el caso de éxito tras 2 reintentos y el caso de agotar los 3 intentos.
+- `404` sí se verificó en vivo: `delete_event(service, "evento-id-que-no-existe-12345")` contra la API real de Calendar → `CalendarError("No se pudo borrar el evento: el evento no existe (puede haber sido borrado).")`.
+- Ambigüedad sí se verificó en vivo contra la API real de Anthropic: `"muévelo al jueves"` (sin descripción del evento) → el modelo llamó `request_clarification` y el CLI imprimió la pregunta sin tocar el calendario. Como regression check, `"agéndame dentista jueves 3pm 1 hora"` (caso claro de H3) siguió extrayendo `create_event` normalmente, confirmando que el nuevo tool/prompt no degradó el caso no-ambiguo.
+- `python -m pytest` → 49/49 tests pasan (42 previos + 7 nuevos de H5: 3 de retry/backoff, 2 de mensajes claros 403/404, 1 de extracción de `request_clarification`, 1 de su despacho en `main.py`).
+
+**Aprendizaje:** no todo EARS de error es igualmente verificable en vivo de forma segura — para casos donde reproducir la condición real es invasivo (rate limit, permisos), el test mockeado es la verificación primaria y corresponde decirlo explícitamente en el cierre del hito, no fingir una verificación en vivo que no ocurrió.
+
+**Fecha:** 2026-06-25 (H5).

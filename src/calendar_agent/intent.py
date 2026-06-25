@@ -75,6 +75,24 @@ TOOLS = [
             "required": ["descripcion_evento"],
         },
     },
+    {
+        "name": "request_clarification",
+        "description": (
+            "Úsala cuando la fecha/hora que pide el usuario es ambigua, o cuando no puedes "
+            "identificar con confianza a qué evento se refiere, en vez de adivinar una "
+            "interpretación."
+        ),
+        "input_schema": {
+            "type": "object",
+            "properties": {
+                "pregunta": {
+                    "type": "string",
+                    "description": "Pregunta concreta para pedirle al usuario la aclaración que falta.",
+                },
+            },
+            "required": ["pregunta"],
+        },
+    },
 ]
 
 
@@ -94,7 +112,11 @@ def _build_system_prompt(today: date) -> str:
         "de las herramientas disponibles con los parámetros extraídos. "
         "Cuando el usuario mencione un día de la semana sin fecha exacta (ej. 'el jueves'), "
         "interpreta la PRÓXIMA ocurrencia de ese día a partir de hoy (sin incluir hoy mismo "
-        "si hoy es ese día). Todas las fechas en tu respuesta deben ir en formato ISO YYYY-MM-DD."
+        "si hoy es ese día). Todas las fechas en tu respuesta deben ir en formato ISO YYYY-MM-DD. "
+        "Si el usuario pide mover o borrar un evento sin describir cuál (ej. 'muévelo', 'bórralo' "
+        "sin título ni hora de referencia), o si la fecha/hora sigue siendo ambigua después de "
+        "aplicar la regla anterior, llama a 'request_clarification' con la pregunta exacta que "
+        "le harías al usuario, en vez de adivinar."
     )
 
 

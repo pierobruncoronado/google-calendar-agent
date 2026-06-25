@@ -1,8 +1,14 @@
-"""Mocked tests for the H4 HITL write flow (create/move/delete). No live API calls."""
+"""Mocked tests for the H4 HITL write flow (create/move/delete) and the H5
+ambiguity-clarification dispatch. No live API calls."""
 
-from unittest.mock import MagicMock
+from unittest.mock import MagicMock, patch
 
-from calendar_agent.main import _handle_create_event, _handle_delete_event, _handle_move_event
+from calendar_agent.main import (
+    _handle_create_event,
+    _handle_delete_event,
+    _handle_move_event,
+    _handle_nl_text,
+)
 
 
 def _yes(_prompt):
@@ -116,3 +122,21 @@ def test_delete_event_not_found_does_not_prompt_or_call_delete():
 
     assert exit_code == 1
     service.events.return_value.delete.assert_not_called()
+
+
+def test_request_clarification_prints_question_and_does_not_touch_calendar(capsys):
+    service = MagicMock()
+    params = {"pregunta": "¿A qué evento te refieres?"}
+
+    def fail_if_called(_prompt):
+        raise AssertionError("no debería pedir confirmación si la intención es aclarar")
+
+    with patch(
+        "calendar_agent.main.extract_intent",
+        return_value={"intent": "request_clarification", "params": params},
+    ):
+        exit_code = _handle_nl_text(service, "muévelo al jueves", input_fn=fail_if_called)
+
+    assert exit_code == 0
+    assert "¿A qué evento te refieres?" in capsys.readouterr().out
+    service.events.assert_not_called()

@@ -132,6 +132,10 @@ def _handle_nl_text(service, text: str, input_fn=input) -> int:
         print(format_events_natural_language(events, f"entre {params['fecha_inicio']} y {params['fecha_fin']}"))
         return 0
 
+    if intent == "request_clarification":
+        print(params["pregunta"])
+        return 0
+
     if intent == "create_event":
         return _handle_create_event(service, params, input_fn)
     if intent == "move_event":

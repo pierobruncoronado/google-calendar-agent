@@ -82,6 +82,18 @@ def test_extracts_delete_event_intent(monkeypatch):
     assert result == {"intent": "delete_event", "params": params}
 
 
+def test_extracts_request_clarification_intent_for_ambiguous_event_reference(monkeypatch):
+    monkeypatch.setenv("ANTHROPIC_API_KEY", "fake-key")
+    params = {"pregunta": "¿A qué evento te refieres? No mencionaste cuál quieres mover."}
+    response = _fake_response("request_clarification", params)
+    patcher, _ = _patched_client(response=response)
+
+    with patcher:
+        result = extract_intent("muévelo al jueves", today=date(2026, 6, 24))
+
+    assert result == {"intent": "request_clarification", "params": params}
+
+
 def test_logs_token_usage(monkeypatch, caplog):
     monkeypatch.setenv("ANTHROPIC_API_KEY", "fake-key")
     response = _fake_response("read_events", {"fecha_inicio": "2026-06-24", "fecha_fin": "2026-06-24"}, 42, 7)

@@ -65,7 +65,7 @@
 - [x] **H2 — Lectura:** consultar eventos por rango. Verify: "¿qué tengo mañana?" devuelve eventos reales del calendario.
 - [x] **H3 — Interpretación NL:** LLM extrae intención + parámetros vía tool-use. Verify: evals de extracción (fecha/hora/título correctos).
 - [x] **H4 — Escritura + HITL:** crear/mover/borrar con confirmación. Verify: propone, espera OK, ejecuta solo tras confirmación.
-- [ ] **H5 — Errores:** backoff en 429, mensajes claros en permisos/no-existe/ambigüedad. Verify: evals de cada caso de error.
+- [x] **H5 — Errores:** backoff en 429, mensajes claros en permisos/no-existe/ambigüedad. Verify: evals de cada caso de error.
 - [ ] **H6 — Deploy + README reproducible.** Verify: corre desde cero siguiendo el README.
 - [ ] **(Capa 2, después del núcleo) — Frontend mínimo mostrable.**
 

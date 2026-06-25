@@ -23,6 +23,11 @@ from calendar_agent.events import (
 UTC = timezone.utc
 
 
+def _http_error(status: int) -> HttpError:
+    fake_response = MagicMock(status=status, reason="error")
+    return HttpError(fake_response, b'{"error": {"message": "error"}}')
+
+
 def test_format_empty_events_says_no_events_explicitly():
     message = format_events_natural_language([], "hoy")
 
@@ -268,4 +273,66 @@ def test_delete_event_wraps_http_error_as_calendarerror():
     )
 
     with pytest.raises(CalendarError):
+        delete_event(service, "evt1")
+
+
+def test_list_events_retries_on_429_then_succeeds(monkeypatch):
+    sleeps = []
+    monkeypatch.setattr("calendar_agent.events.time.sleep", lambda s: sleeps.append(s))
+    service = MagicMock()
+    service.events.return_value.list.return_value.execute.side_effect = [
+        _http_error(429),
+        _http_error(429),
+        {"items": [{"summary": "A"}]},
+    ]
+    time_min = datetime(2026, 6, 25, 0, 0, tzinfo=UTC)
+    time_max = datetime(2026, 6, 26, 0, 0, tzinfo=UTC)
+
+    result = list_events(service, time_min, time_max)
+
+    assert result == [{"summary": "A"}]
+    assert sleeps == [1.0, 2.0]
+
+
+def test_list_events_raises_calendarerror_after_exhausting_429_retries(monkeypatch):
+    monkeypatch.setattr("calendar_agent.events.time.sleep", lambda s: None)
+    service = MagicMock()
+    service.events.return_value.list.return_value.execute.side_effect = _http_error(429)
+    time_min = datetime(2026, 6, 25, 0, 0, tzinfo=UTC)
+    time_max = datetime(2026, 6, 26, 0, 0, tzinfo=UTC)
+
+    with pytest.raises(CalendarError, match="limitando"):
+        list_events(service, time_min, time_max)
+
+    assert service.events.return_value.list.return_value.execute.call_count == 3
+
+
+def test_list_events_does_not_retry_on_non_429_error(monkeypatch):
+    sleeps = []
+    monkeypatch.setattr("calendar_agent.events.time.sleep", lambda s: sleeps.append(s))
+    service = MagicMock()
+    service.events.return_value.list.return_value.execute.side_effect = _http_error(500)
+    time_min = datetime(2026, 6, 25, 0, 0, tzinfo=UTC)
+    time_max = datetime(2026, 6, 26, 0, 0, tzinfo=UTC)
+
+    with pytest.raises(CalendarError):
+        list_events(service, time_min, time_max)
+
+    assert sleeps == []
+    assert service.events.return_value.list.return_value.execute.call_count == 1
+
+
+def test_move_event_403_gives_clear_permission_message():
+    service = MagicMock()
+    service.events.return_value.get.return_value.execute.side_effect = _http_error(403)
+
+    with pytest.raises(CalendarError, match="permiso"):
+        move_event(service, "evt1", "2026-06-25", "16:00")
+
+
+def test_delete_event_404_gives_clear_not_found_message():
+    service = MagicMock()
+    service.events.return_value.delete.return_value.execute.side_effect = _http_error(404)
+
+    with pytest.raises(CalendarError, match="no existe"):
         delete_event(service, "evt1")

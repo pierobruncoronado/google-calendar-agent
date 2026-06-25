@@ -2,6 +2,7 @@
 
 import json
 import logging
+import time
 from datetime import date, datetime, timedelta
 from zoneinfo import ZoneInfo
 
@@ -18,6 +19,32 @@ class CalendarError(Exception):
 
 def _log_event(level: int, event: str, **fields) -> None:
     logger.log(level, json.dumps({"event": event, **fields}))
+
+
+def _execute_with_retry(request, max_retries: int = 3, base_delay: float = 1.0):
+    """Run a Google API request, retrying on 429 (rate limit) with exponential
+    backoff. Any other HttpError, or a 429 that's still failing after the last
+    retry, propagates to the caller's own error handling."""
+    for attempt in range(max_retries):
+        try:
+            return request.execute()
+        except HttpError as exc:
+            if exc.status_code == 429 and attempt < max_retries - 1:
+                _log_event(logging.WARNING, "calendar_rate_limited", attempt=attempt + 1)
+                time.sleep(base_delay * (2**attempt))
+                continue
+            raise
+
+
+def _calendar_error_message(action: str, exc: HttpError) -> str:
+    status = exc.status_code
+    if status == 403:
+        return f"No tienes permiso para {action}."
+    if status == 404:
+        return f"No se pudo {action}: el evento no existe (puede haber sido borrado)."
+    if status == 429:
+        return f"No se pudo {action}: Google Calendar está limitando las solicitudes. Intenta de nuevo en un momento."
+    return f"No se pudo {action} (error HTTP {status})."
 
 
 def today_range(now: datetime | None = None) -> tuple[datetime, datetime]:
@@ -44,9 +71,8 @@ def list_events(service, time_min: datetime, time_max: datetime) -> list[dict]:
 
     while True:
         try:
-            response = (
-                service.events()
-                .list(
+            response = _execute_with_retry(
+                service.events().list(
                     calendarId="primary",
                     timeMin=time_min.isoformat(),
                     timeMax=time_max.isoformat(),
@@ -54,13 +80,10 @@ def list_events(service, time_min: datetime, time_max: datetime) -> list[dict]:
                     orderBy="startTime",
                     pageToken=page_token,
                 )
-                .execute()
             )
         except HttpError as exc:
             _log_event(logging.ERROR, "calendar_list_failed", status=exc.status_code)
-            raise CalendarError(
-                f"No se pudo consultar el calendario (error HTTP {exc.status_code})."
-            ) from exc
+            raise CalendarError(_calendar_error_message("consultar el calendario", exc)) from exc
 
         events.extend(response.get("items", []))
         page_token = response.get("nextPageToken")
@@ -120,10 +143,10 @@ def create_event(service, titulo: str, fecha: str, hora: str, duracion_minutos: 
     }
 
     try:
-        return service.events().insert(calendarId="primary", body=body).execute()
+        return _execute_with_retry(service.events().insert(calendarId="primary", body=body))
     except HttpError as exc:
         _log_event(logging.ERROR, "calendar_create_failed", status=exc.status_code)
-        raise CalendarError(f"No se pudo crear el evento (error HTTP {exc.status_code}).") from exc
+        raise CalendarError(_calendar_error_message("crear el evento", exc)) from exc
 
 
 def find_event_by_description(
@@ -133,9 +156,8 @@ def find_event_by_description(
     time_max = now + timedelta(days=window_days)
 
     try:
-        response = (
-            service.events()
-            .list(
+        response = _execute_with_retry(
+            service.events().list(
                 calendarId="primary",
                 q=descripcion,
                 timeMin=now.isoformat(),
@@ -144,11 +166,10 @@ def find_event_by_description(
                 orderBy="startTime",
                 maxResults=1,
             )
-            .execute()
         )
     except HttpError as exc:
         _log_event(logging.ERROR, "calendar_search_failed", status=exc.status_code)
-        raise CalendarError(f"No se pudo buscar el evento (error HTTP {exc.status_code}).") from exc
+        raise CalendarError(_calendar_error_message("buscar el evento", exc)) from exc
 
     items = response.get("items", [])
     return items[0] if items else None
@@ -156,10 +177,10 @@ def find_event_by_description(
 
 def move_event(service, event_id: str, nueva_fecha: str, nueva_hora: str) -> dict:
     try:
-        event = service.events().get(calendarId="primary", eventId=event_id).execute()
+        event = _execute_with_retry(service.events().get(calendarId="primary", eventId=event_id))
     except HttpError as exc:
         _log_event(logging.ERROR, "calendar_get_failed", status=exc.status_code)
-        raise CalendarError(f"No se pudo leer el evento a mover (error HTTP {exc.status_code}).") from exc
+        raise CalendarError(_calendar_error_message("leer el evento a mover", exc)) from exc
 
     original_start = event.get("start", {})
     original_end = event.get("end", {})
@@ -181,15 +202,17 @@ def move_event(service, event_id: str, nueva_fecha: str, nueva_hora: str) -> dic
     }
 
     try:
-        return service.events().patch(calendarId="primary", eventId=event_id, body=body).execute()
+        return _execute_with_retry(
+            service.events().patch(calendarId="primary", eventId=event_id, body=body)
+        )
     except HttpError as exc:
         _log_event(logging.ERROR, "calendar_move_failed", status=exc.status_code)
-        raise CalendarError(f"No se pudo mover el evento (error HTTP {exc.status_code}).") from exc
+        raise CalendarError(_calendar_error_message("mover el evento", exc)) from exc
 
 
 def delete_event(service, event_id: str) -> None:
     try:
-        service.events().delete(calendarId="primary", eventId=event_id).execute()
+        _execute_with_retry(service.events().delete(calendarId="primary", eventId=event_id))
     except HttpError as exc:
         _log_event(logging.ERROR, "calendar_delete_failed", status=exc.status_code)
-        raise CalendarError(f"No se pudo borrar el evento (error HTTP {exc.status_code}).") from exc
+        raise CalendarError(_calendar_error_message("borrar el evento", exc)) from exc
