@@ -1,6 +1,7 @@
 """Mocked tests for NL intent extraction via forced Anthropic tool-use.
 No live LLM calls."""
 
+import os
 from datetime import date
 from unittest.mock import MagicMock, patch
 
@@ -165,3 +166,22 @@ def test_raises_intenterror_when_no_tool_use_block(monkeypatch):
     with patcher:
         with pytest.raises(IntentError):
             extract_intent("hola", today=date(2026, 6, 24))
+
+
+@pytest.mark.skipif(
+    not os.environ.get("ANTHROPIC_API_KEY"),
+    reason="requires ANTHROPIC_API_KEY for Capa 1 behavioral eval",
+)
+def test_cancela_el_evento_sin_descripcion_triggers_capa1_clarification_behavioral():
+    """Behavioral eval: 'cancela el evento' sin ningún descriptor identificador debe
+    disparar request_clarification en Capa 1 — no delete_event con una descripción inventada.
+
+    Valida que la regla de Capa 1 (solo clarificar cuando el descriptor está vacío)
+    funciona: 'el evento' sin título/nombre/tipo/horario es suficientemente genérico
+    para que Capa 1 pida aclaración antes de intentar buscar en el calendario."""
+    result = extract_intent("cancela el evento", today=date(2026, 6, 25))
+
+    assert result["intent"] == "request_clarification", (
+        f"'cancela el evento' sin descriptor debe disparar aclaración en Capa 1, "
+        f"pero devolvió intent={result['intent']!r} con params={result['params']}"
+    )

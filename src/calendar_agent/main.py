@@ -9,6 +9,7 @@ from dotenv import load_dotenv
 
 from calendar_agent.auth import AuthError, get_calendar_service
 from calendar_agent.events import (
+    AmbiguousEventError,
     CalendarError,
     create_event,
     custom_range,
@@ -65,6 +66,12 @@ def _handle_create_event(service, params: dict, input_fn=input) -> int:
 def _handle_move_event(service, params: dict, input_fn=input) -> int:
     try:
         event = find_event_by_description(service, params["descripcion_evento"])
+    except AmbiguousEventError as exc:
+        print("Encontré varios eventos que podrían coincidir:")
+        for c in exc.candidates:
+            print(f"  - {describe_event(c)}")
+        print("Por favor especifica cuál quieres mover con más detalle.")
+        return 0
     except CalendarError as exc:
         print(f"Error al buscar el evento: {exc}", file=sys.stderr)
         return 1
@@ -92,6 +99,12 @@ def _handle_move_event(service, params: dict, input_fn=input) -> int:
 def _handle_delete_event(service, params: dict, input_fn=input) -> int:
     try:
         event = find_event_by_description(service, params["descripcion_evento"])
+    except AmbiguousEventError as exc:
+        print("Encontré varios eventos que podrían coincidir:")
+        for c in exc.candidates:
+            print(f"  - {describe_event(c)}")
+        print("Por favor especifica cuál quieres borrar con más detalle.")
+        return 0
     except CalendarError as exc:
         print(f"Error al buscar el evento: {exc}", file=sys.stderr)
         return 1

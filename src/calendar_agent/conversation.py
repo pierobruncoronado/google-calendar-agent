@@ -9,6 +9,7 @@ action is parked in `state` and resumed on the next call to handle_turn().
 from datetime import date
 
 from calendar_agent.events import (
+    AmbiguousEventError,
     CalendarError,
     create_event,
     custom_range,
@@ -73,6 +74,14 @@ def _process_message(service, state: dict, text: str, history: list[dict] | None
     if intent in ("move_event", "delete_event"):
         try:
             event = find_event_by_description(service, params["descripcion_evento"])
+        except AmbiguousEventError as exc:
+            candidate_list = "\n".join(f"- {describe_event(c)}" for c in exc.candidates)
+            pregunta = (
+                f"Encontré varios eventos que podrían coincidir con "
+                f"'{params['descripcion_evento']}':\n{candidate_list}\n¿A cuál te refieres?"
+            )
+            state["pending_clarification"] = {"original_message": text, "pregunta": pregunta}
+            return pregunta
         except CalendarError as exc:
             return f"Error al buscar el evento: {exc}"
         if event is None:

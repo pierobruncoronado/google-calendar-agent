@@ -90,9 +90,11 @@ TOOLS = [
     {
         "name": "request_clarification",
         "description": (
-            "Úsala cuando la fecha/hora que pide el usuario es ambigua, o cuando no puedes "
-            "identificar con confianza a qué evento se refiere, en vez de adivinar una "
-            "interpretación."
+            "Úsala cuando la fecha/hora es ambigua, o cuando el usuario NO da ninguna descripción "
+            "identificadora del evento (ej. 'muévelo', 'bórralo' sin título, nombre ni horario). "
+            "Si el usuario menciona cualquier descriptor parcial (nombre, tipo, participante, horario), "
+            "extráelo como descripcion_evento — la resolución entre múltiples candidatos la maneja "
+            "otra capa que tiene acceso a los eventos reales."
         ),
         "input_schema": {
             "type": "object",
@@ -128,10 +130,12 @@ def _build_system_prompt(today: date) -> str:
         "Al mover un evento, si el usuario solo menciona una nueva fecha (sin hora) o solo una "
         "nueva hora (sin fecha), omite por completo el campo que no mencionó — NUNCA inventes "
         "un valor de relleno para ese campo. "
-        "Si el usuario pide mover o borrar un evento sin describir cuál (ej. 'muévelo', 'bórralo' "
-        "sin título ni hora de referencia), o si la fecha/hora sigue siendo ambigua después de "
-        "aplicar la regla anterior, llama a 'request_clarification' con la pregunta exacta que "
-        "le harías al usuario, en vez de adivinar."
+        "Si el usuario pide mover o borrar un evento sin dar NINGÚN descriptor identificador "
+        "(ej. 'muévelo', 'bórralo' sin título, nombre, tipo ni horario), o si la fecha/hora sigue "
+        "siendo ambigua después de aplicar la regla anterior, llama a 'request_clarification'. "
+        "Si el usuario menciona cualquier descriptor parcial del evento (ej. 'el café', 'la reunión "
+        "de las 3', 'el evento con Pedro'), extráelo en descripcion_evento — NO llames a "
+        "request_clarification solo porque el descriptor sea breve o pueda tener varios matches."
     )
 
 

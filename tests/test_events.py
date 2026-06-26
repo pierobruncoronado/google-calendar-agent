@@ -8,6 +8,7 @@ import pytest
 from googleapiclient.errors import HttpError
 
 from calendar_agent.events import (
+    AmbiguousEventError,
     CalendarError,
     create_event,
     custom_range,
@@ -435,3 +436,83 @@ def test_find_event_by_description_llm_matching_behavioral():
     assert result is not None, "LLM debió identificar 'Café con Vania' como el café de mañana"
     assert result["id"] == "evt1"
     assert result["summary"] == "Café con Vania"
+
+
+@pytest.mark.skipif(
+    not os.environ.get("ANTHROPIC_API_KEY"),
+    reason="requires ANTHROPIC_API_KEY for LLM matching eval",
+)
+def test_single_cafe_resolves_without_ambiguity_behavioral():
+    """Behavioral eval: 'cancela el café' con UN solo 'Café con Vania' debe resolverse
+    directamente sin pedir aclaración — Capa 2 elige el único candidato.
+
+    Con el código viejo (sin tool 'ambiguous'), este caso podía ser interceptado
+    por Capa 1 antes de llegar aquí. Este test valida que Capa 2 resuelve
+    un candidato único sin dudar."""
+    service = MagicMock()
+    service.events.return_value.list.return_value.execute.return_value = {
+        "items": [
+            {
+                "id": "evt1",
+                "summary": "Café con Vania",
+                "start": {"dateTime": "2026-06-26T10:00:00Z"},
+                "end": {"dateTime": "2026-06-26T11:00:00Z"},
+            }
+        ]
+    }
+
+    result = find_event_by_description(
+        service,
+        "el café",
+        now=datetime(2026, 6, 25, 9, 0, tzinfo=UTC),
+    )
+
+    assert result is not None, (
+        "Con un solo candidato 'Café con Vania', 'el café' debe resolverse sin aclaración"
+    )
+    assert result["id"] == "evt1"
+
+
+@pytest.mark.skipif(
+    not os.environ.get("ANTHROPIC_API_KEY"),
+    reason="requires ANTHROPIC_API_KEY for LLM matching eval",
+)
+def test_multiple_cafes_raises_ambiguous_not_destructive_behavioral():
+    """Behavioral eval: 'cancela el café' con DOS cafés ('Café con Vania' y 'Café con Pedro')
+    debe lanzar AmbiguousEventError con ambos candidatos — NO elegir uno y borrarlo.
+
+    REPRODUCE EL BUG DESTRUCTIVO LATENTE: con el código viejo (sin tool 'ambiguous'),
+    el LLM elegía el 'mejor fit' y devolvía ese evento, que luego se borraba sin avisar
+    al usuario que había otra opción. Este test falla con la implementación vieja."""
+    service = MagicMock()
+    service.events.return_value.list.return_value.execute.return_value = {
+        "items": [
+            {
+                "id": "evt1",
+                "summary": "Café con Vania",
+                "start": {"dateTime": "2026-06-26T10:00:00Z"},
+                "end": {"dateTime": "2026-06-26T11:00:00Z"},
+            },
+            {
+                "id": "evt2",
+                "summary": "Café con Pedro",
+                "start": {"dateTime": "2026-06-27T10:00:00Z"},
+                "end": {"dateTime": "2026-06-27T11:00:00Z"},
+            },
+        ]
+    }
+
+    with pytest.raises(AmbiguousEventError) as exc_info:
+        find_event_by_description(
+            service,
+            "el café",
+            now=datetime(2026, 6, 25, 9, 0, tzinfo=UTC),
+        )
+
+    candidates = exc_info.value.candidates
+    assert len(candidates) >= 2, (
+        f"Debe devolver al menos los 2 cafés como candidatos ambiguos, got {len(candidates)}"
+    )
+    ids = {c["id"] for c in candidates}
+    assert "evt1" in ids, "Café con Vania debe estar entre los candidatos"
+    assert "evt2" in ids, "Café con Pedro debe estar entre los candidatos"

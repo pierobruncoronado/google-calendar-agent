@@ -140,6 +140,18 @@ Registro de decisiones no fijadas textualmente en el spec, tomadas durante la im
 
 **Fecha:** 2026-06-25 (Capa 2).
 
+## Fix event-matching — bug destructivo latente en Capa 2 (multi-candidatos)
+
+**Problema descubierto:** `_match_event_llm` en `events.py` solo tenía dos salidas: `select_event` (elige un índice) y `no_match`. Con múltiples candidatos plausibles (ej. "Café con Vania" y "Café con Pedro"), el LLM siempre elegía el "mejor fit" y lo devolvía — lo que causaba que se borrara o moviera ese evento sin que el usuario supiera que había otras opciones. Bug latente hasta que se preguntó explícitamente "¿qué hace Capa 2 con varios candidatos?" durante la revisión del fix de conservatismo de Capa 1.
+
+**Fix:** agregar un tercer tool `ambiguous` a `_match_event_llm` que el LLM debe usar cuando hay más de un candidato razonable. Lanza `AmbiguousEventError(candidates)`. `conversation.py` y `main.py` capturan esta excepción, muestran la lista de candidatos, y preguntan al usuario cuál quiere — sin tocar el calendario.
+
+**Simultaneamente:** se corrigió que Capa 1 (`intent.py`) disparaba `request_clarification` para descripciones parciales como "el café", porque su descripción/system prompt decía "cuando no puedes identificar con confianza". Capa 1 no tiene acceso al calendario y no debe hacerse cargo de la ambigüedad de candidatos — eso es trabajo de Capa 2. La nueva regla: Capa 1 solo clarifica cuando el descriptor está literalmente vacío (ej. "muévelo" sin ningún título/tipo/participante/horario).
+
+**Aprendizaje:** en acciones destructivas, "elegir el mejor" es inseguro. Ante múltiples candidatos razonables, el LLM no debe tener licencia para desambiguar por su cuenta — eso es una decisión del usuario. La pregunta "¿qué pasa si hay varios candidatos?" debe ser parte del diseño de cualquier tool de acción destructiva que recibe input ambiguo.
+
+**Fecha:** 2026-06-25 (post-Capa 2, descubierto en revisión de seguridad).
+
 ## H5 Fix — Event matching via LLM (gap de spec)
 
 **Problema:** `find_event_by_description` usaba `q=descripcion` de Google Calendar API — búsqueda literal de texto. Cuando el usuario dice "cancela el café de mañana", `extract_intent` extrae `descripcion_evento: "café de mañana"`, la API recibe `q="café de mañana"` y no encuentra "Café con Vania" porque "de mañana" no aparece en el título. Resultado: falso negativo.

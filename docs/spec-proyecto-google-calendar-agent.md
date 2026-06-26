@@ -59,6 +59,11 @@
 - CUANDO el usuario refiere un evento en lenguaje natural ("café de mañana"), EL SISTEMA NO DEBE hacer match literal de strings contra los títulos de eventos.
 - EL SISTEMA DEBE obtener la lista de eventos en la ventana temporal relevante Y usar el LLM para identificar cuál evento corresponde a la descripción del usuario (mismo patrón de forced tool-use que H3).
 
+**Identificación de eventos por descripción natural — criterio de resolución:**
+- (a) Descripción vacía: CUANDO el usuario pide mover/borrar un evento sin dar ningún descriptor (título, tipo, participante, horario), EL SISTEMA DEBE pedir aclaración en Capa 1 (intent) ANTES de buscar en el calendario.
+- (b) Un solo candidato razonable: CUANDO Capa 2 encuentra exactamente un evento que corresponde a la descripción, EL SISTEMA DEBE resolverlo sin pedir aclaración adicional y proceder directamente al paso HITL de confirmación.
+- (c) Múltiples candidatos razonables: CUANDO Capa 2 encuentra más de un evento plausible, EL SISTEMA DEBE listar los candidatos, preguntar al usuario cuál quiere, y NO ejecutar ninguna acción destructiva automáticamente.
+
 **Manejo de errores (el muro de integración):**
 - CUANDO la API devuelve rate limit (429), EL SISTEMA DEBE reintentar con backoff Y NO crashear.
 - CUANDO la API devuelve error de permisos o el evento no existe, EL SISTEMA DEBE reportar el error en lenguaje claro Y NO fallar en silencio.

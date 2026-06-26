@@ -21,6 +21,14 @@ class CalendarError(Exception):
     """Raised for any Calendar API failure, instead of letting raw HttpError propagate."""
 
 
+class AmbiguousEventError(Exception):
+    """Raised when multiple calendar events are plausible matches for a description."""
+
+    def __init__(self, candidates: list[dict]):
+        super().__init__(f"Ambiguous: {len(candidates)} candidates")
+        self.candidates = candidates
+
+
 def _log_event(level: int, event: str, **fields) -> None:
     logger.log(level, json.dumps({"event": event, **fields}))
 
@@ -172,7 +180,7 @@ def _match_event_llm(events: list[dict], descripcion: str) -> dict | None:
     tools = [
         {
             "name": "select_event",
-            "description": "Selecciona el evento que mejor corresponde a la descripción del usuario.",
+            "description": "Selecciona el evento que corresponde a la descripción del usuario. Úsala solo si hay EXACTAMENTE UN evento que encaja con claridad.",
             "input_schema": {
                 "type": "object",
                 "properties": {
@@ -182,6 +190,24 @@ def _match_event_llm(events: list[dict], descripcion: str) -> dict | None:
                     }
                 },
                 "required": ["index"],
+            },
+        },
+        {
+            "name": "ambiguous",
+            "description": (
+                "Úsala cuando hay MÁS DE UN evento que podría corresponder a la descripción del usuario. "
+                "Lista todos los índices de los candidatos razonables para que el usuario elija."
+            ),
+            "input_schema": {
+                "type": "object",
+                "properties": {
+                    "indices": {
+                        "type": "array",
+                        "items": {"type": "integer"},
+                        "description": "Índices (base 0) de todos los eventos candidatos razonables.",
+                    }
+                },
+                "required": ["indices"],
             },
         },
         {
@@ -199,8 +225,9 @@ def _match_event_llm(events: list[dict], descripcion: str) -> dict | None:
             max_tokens=256,
             system=(
                 "Identifica cuál evento de calendario corresponde a la descripción del usuario. "
-                "Usa 'select_event' con el índice del evento que mejor encaja, "
-                "o 'no_match' si ninguno corresponde."
+                "Usa 'select_event' solo si hay EXACTAMENTE UN evento que encaja con claridad. "
+                "Usa 'ambiguous' si hay más de uno razonablemente plausible — lista todos sus índices. "
+                "Usa 'no_match' si ninguno corresponde."
             ),
             messages=[
                 {
@@ -218,6 +245,10 @@ def _match_event_llm(events: list[dict], descripcion: str) -> dict | None:
     tool_use = next((b for b in response.content if b.type == "tool_use"), None)
     if tool_use is None or tool_use.name == "no_match":
         return None
+    if tool_use.name == "ambiguous":
+        indices = tool_use.input.get("indices", [])
+        candidates = [events[i] for i in indices if 0 <= i < len(events)]
+        raise AmbiguousEventError(candidates or events)
     index = tool_use.input.get("index", -1)
     if 0 <= index < len(events):
         return events[index]
