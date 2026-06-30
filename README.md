@@ -1,25 +1,24 @@
-# Agente conversacional de Google Calendar (v1)
+# Conversational Google Calendar Agent (v1)
 
-Agente que entiende lenguaje natural y opera sobre tu Google Calendar real vía OAuth 2.0 y la
-API oficial: consulta, crea, mueve y borra eventos, con confirmación humana (HITL) en las
-acciones destructivas. Spec completo en `docs/spec-proyecto-google-calendar-agent.md`,
-decisiones de implementación en `docs/DECISIONS.md`.
+Agent that understands natural language and operates on your real Google Calendar via OAuth 2.0
+and the official API: reads, creates, moves, and deletes events, with human confirmation (HITL)
+on destructive actions. Full spec in `docs/spec-proyecto-google-calendar-agent.md`, implementation
+decisions in `docs/DECISIONS.md`.
 
-**Estado:** H1-H5 completos (OAuth, lectura, interpretación NL, escritura+HITL, manejo de
-errores). Un frontend mostrable es capa 2, fuera de v1.
+**Status:** H1–H6 + Layer 2 complete (OAuth, read, NL interpretation, write + HITL, error
+handling, reproducible setup, minimal web UI). Full case study in `CASE_STUDY.md`.
 
-## Prerrequisitos
+## Prerequisites
 
-- Python 3.12 (no 3.14 — algunas dependencias todavía no tienen wheel). Si tu `python` por
-  defecto es 3.14, crea el venv con `py -3.12 -m venv .venv`.
-- Un proyecto en Google Cloud Console con:
-  - Calendar API habilitada.
-  - OAuth consent screen configurado (modo "Testing" alcanza para uso personal).
-  - Credenciales OAuth tipo "Desktop app" descargadas como `credentials.json`.
-- Una API key de Anthropic (`ANTHROPIC_API_KEY`) — la interpretación de lenguaje natural
-  depende de ella.
+- Python 3.12 (not 3.14 — some dependencies don't have wheels yet). If your default `python` is
+  3.14, create the venv with `py -3.12 -m venv .venv`.
+- A Google Cloud Console project with:
+  - Calendar API enabled.
+  - OAuth consent screen configured ("Testing" mode is enough for personal use).
+  - OAuth credentials of type "Desktop app" downloaded as `credentials.json`.
+- An Anthropic API key (`ANTHROPIC_API_KEY`) — natural language interpretation depends on it.
 
-## Instalación
+## Installation
 
 ```powershell
 git clone https://github.com/pierobruncoronado/google-calendar-agent.git
@@ -29,42 +28,42 @@ py -3.12 -m venv .venv
 pip install -r requirements-dev.txt
 ```
 
-`requirements-dev.txt` incluye `requirements.txt` + `pytest`. Si solo vas a correr el agente
-(sin tests), `pip install -r requirements.txt` alcanza.
+`requirements-dev.txt` includes `requirements.txt` + `pytest`. If you only want to run the agent
+(no tests), `pip install -r requirements.txt` is enough.
 
-## Configuración
+## Configuration
 
-1. Coloca el `credentials.json` descargado de Google Cloud Console en la raíz del proyecto.
-2. Copia `.env.example` a `.env` y completa `ANTHROPIC_API_KEY`:
+1. Place the `credentials.json` downloaded from Google Cloud Console in the project root.
+2. Copy `.env.example` to `.env` and fill in `ANTHROPIC_API_KEY`:
 
 ```powershell
 Copy-Item .env.example .env
 notepad .env
 ```
 
-**No uses `Set-Content` ni `>` para editar `.env` en PowerShell** — escriben UTF-8 con BOM, lo
-que rompe `python-dotenv` al leer el archivo (falla en silencio o carga la primera clave con el
-nombre corrompido). Usa Notepad, o
-`[System.IO.File]::WriteAllLines(ruta, lineas, (New-Object System.Text.UTF8Encoding $false))`
-para forzar UTF-8 sin BOM.
+**Do not use `Set-Content` or `>` to edit `.env` in PowerShell** — they write UTF-8 with BOM,
+which breaks `python-dotenv` when reading the file (fails silently or loads the first key with a
+mangled name). Use Notepad, or
+`[System.IO.File]::WriteAllLines(path, lines, (New-Object System.Text.UTF8Encoding $false))`
+to force BOM-less UTF-8.
 
-## Primer uso (OAuth)
+## First use (OAuth)
 
-El proyecto usa layout `src/`, así que hay que apuntar `PYTHONPATH` a `src` para correr el
-módulo directamente:
+The project uses a `src/` layout, so you need to point `PYTHONPATH` to `src` to run the module
+directly:
 
 ```powershell
 $env:PYTHONPATH = "src"
 python -m calendar_agent.main
 ```
 
-La primera vez abre el navegador para el consent flow de Google y guarda el token en
-`token.json` (gitignored). Las corridas siguientes refrescan el token automáticamente — no
-vuelve a pedir login mientras `token.json` siga siendo válido.
+The first run opens the browser for Google's consent flow and saves the token in `token.json`
+(gitignored). Subsequent runs refresh the token automatically — no re-login as long as
+`token.json` remains valid.
 
-## Uso
+## Usage
 
-Lectura por rango:
+Read by range:
 
 ```powershell
 python -m calendar_agent.main "hoy"
@@ -72,7 +71,7 @@ python -m calendar_agent.main "mañana"
 python -m calendar_agent.main "2026-06-30"
 ```
 
-Lenguaje natural (cualquier otro texto se interpreta vía LLM):
+Natural language (any other text is interpreted via LLM):
 
 ```powershell
 python -m calendar_agent.main "¿qué tengo el viernes?"
@@ -81,25 +80,24 @@ python -m calendar_agent.main "mueve mi reunión de las 2 a las 4"
 python -m calendar_agent.main "borra mi reunión de mañana a las 10"
 ```
 
-Las acciones de escritura (crear/mover/borrar) siempre proponen la acción exacta y esperan
-confirmación (`si`/`no`) antes de tocar el calendario. Si la fecha/hora es ambigua o no se
-puede identificar el evento, el agente pide aclaración en vez de adivinar.
+Write operations (create / move / delete) always propose the exact action and wait for
+confirmation (`si`/`no`) before touching the calendar. If the date/time is ambiguous or the
+event cannot be identified, the agent asks for clarification instead of guessing.
 
-## Capa 2: interfaz web
+## Layer 2: Web interface
 
-Una alternativa al CLI: una página de chat mínima (FastAPI + HTML/JS vanilla, sin build step)
-con conversación multi-turno — recuerda el turno anterior, así que la confirmación HITL y la
-aclaración de ambigüedad funcionan como una conversación real, no como comandos sueltos.
+An alternative to the CLI: a minimal chat page (FastAPI + vanilla HTML/JS, no build step) with
+multi-turn conversation — remembers the previous turn, so HITL confirmation and ambiguity
+clarification work as a real conversation, not standalone commands.
 
 ```powershell
 $env:PYTHONPATH = "src"
 python -m calendar_agent.webapp
 ```
 
-Abre `http://127.0.0.1:8000` en el navegador. Falla rápido (antes de levantar el servidor) si
-el OAuth/credenciales no son válidos, igual que el CLI. El estado de la conversación vive en
-memoria del proceso (cookie de sesión) — no hay base de datos en v1, así que se pierde si
-reinicias el servidor.
+Open `http://127.0.0.1:8000` in the browser. Fails fast (before starting the server) if the
+OAuth credentials are invalid, same as the CLI. Conversation state lives in process memory
+(session cookie) — no database in v1, so it is lost if you restart the server.
 
 ## Tests
 
@@ -107,30 +105,30 @@ reinicias el servidor.
 python -m pytest
 ```
 
-Todos los tests usan mocks — no hacen llamadas reales a Google ni a Anthropic, así que corren
-sin `.env`/`credentials.json` válidos. `pytest.ini` ya apunta `pythonpath` a `src`, no hace
-falta exportar `PYTHONPATH` para los tests (sí para correr el CLI directamente, ver arriba).
+All tests use mocks — no real calls to Google or Anthropic, so they run without valid
+`.env`/`credentials.json`. `pytest.ini` already points `pythonpath` to `src`; no need to export
+`PYTHONPATH` for tests (you do need it to run the CLI directly, see above).
 
-## Seguridad
+## Security
 
-`.env`, `token.json` y `credentials.json` están en `.gitignore` — nunca deberían aparecer en un
-commit. Verifica con `git status` antes de cualquier commit si los tocaste manualmente.
+`.env`, `token.json`, and `credentials.json` are in `.gitignore` — they should never appear in a
+commit. Check with `git status` before any commit if you touched them manually.
 
-## Estructura
+## Structure
 
 ```
 src/calendar_agent/
-  auth.py     # OAuth consent flow + refresh de tokens (H1)
-  events.py   # lectura/escritura de eventos contra la API de Calendar (H2, H4) + manejo de errores (H5)
-  intent.py        # extracción de intención NL vía forced tool-use de Anthropic (H3, H5)
-  main.py          # entrypoint CLI: despacha lectura, escritura+HITL y aclaración de ambigüedad
-  conversation.py  # lógica de turno multi-turno para la web UI (Capa 2), reutiliza events.py/intent.py
-  webapp.py        # entrypoint FastAPI: una página de chat + sesión en memoria (Capa 2)
-tests/        # tests mockeados, uno por módulo
-docs/         # spec + registro de decisiones
+  auth.py          # OAuth consent flow + token refresh (H1)
+  events.py        # Read/write events against the Calendar API (H2, H4) + error handling (H5)
+  intent.py        # NL intent extraction via Anthropic forced tool-use (H3, H5)
+  main.py          # CLI entrypoint: dispatches reads, write + HITL, and ambiguity clarification
+  conversation.py  # Multi-turn logic for the web UI (Layer 2), reuses events.py/intent.py
+  webapp.py        # FastAPI entrypoint: one chat page + in-memory session (Layer 2)
+tests/             # Mocked tests, one per module
+docs/              # Spec + decision log
 ```
 
-## Fuera de alcance (v1)
+## Out of scope (v1)
 
-Gmail, multi-usuario, frontend elaborado, recurrencia avanzada de eventos, notificaciones push
-— ver `docs/spec-proyecto-google-calendar-agent.md` §2 para el detalle completo.
+Gmail, multi-user, elaborate frontend, advanced event recurrence, push notifications — see
+`docs/spec-proyecto-google-calendar-agent.md` §2 for the full details.
